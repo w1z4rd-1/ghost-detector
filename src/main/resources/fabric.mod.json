@@ -20,7 +20,8 @@
     ]
   },
   "mixins": [
-    "tagger.mixins.json"
+    "tagger.mixins.json",
+    "tagger.client.mixins.json"
   ],
 
   "depends": {
