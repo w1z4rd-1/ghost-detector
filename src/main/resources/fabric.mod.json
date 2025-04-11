@@ -19,7 +19,9 @@
       "net.infiniteimperm.fabric.tagger.TaggerMod"
     ]
   },
-  "mixins": [],
+  "mixins": [
+    "tagger.mixins.json"
+  ],
 
   "depends": {
     "fabricloader": "0.16.13",
