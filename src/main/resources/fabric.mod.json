@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "tagger",
+  "version": "${version}",
+
+  "name": "Tagger",
+  "description": "A simple player tagging mod",
+  "authors": [
+    "InfiniteImperm"
+  ],
+  "contact": {},
+
+  "license": "MIT",
+  "icon": "assets/tagger/icon.png",
+
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "net.infiniteimperm.fabric.tagger.TaggerMod"
+    ]
+  },
+  "mixins": [],
+
+  "depends": {
+    "fabricloader": "0.16.13",
+    "minecraft": "1.21.x",
+    "java": ">=21"
+  }
+}
