@@ -48,7 +48,15 @@ public abstract class PlayerListHudMixin {
             } else {
                 // Just apply the color without showing the tag
                 MutableText coloredName = Text.literal(profileName);
-                coloredName = coloredName.formatted(formatting);
+                
+                // Always apply the correct color to hidden tags
+                if (tag.equalsIgnoreCase("T")) {
+                    coloredName = coloredName.formatted(Formatting.GOLD);
+                } else if (tag.equalsIgnoreCase("Private")) {
+                    coloredName = coloredName.formatted(Formatting.BLUE);
+                } else {
+                    coloredName = coloredName.formatted(formatting);
+                }
                 
                 cir.setReturnValue(coloredName);
                 cir.cancel();

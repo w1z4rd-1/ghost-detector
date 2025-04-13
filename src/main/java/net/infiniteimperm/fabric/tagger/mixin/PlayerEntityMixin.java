@@ -53,7 +53,15 @@ public abstract class PlayerEntityMixin {
             } else {
                 // Just color the name for T and Private tags
                 MutableText coloredName = Text.literal(playerEntity.getName().getString());
-                coloredName = coloredName.formatted(formatting);
+                
+                // Always apply the correct color to hidden tags
+                if (tag.equalsIgnoreCase("T")) {
+                    coloredName = coloredName.formatted(Formatting.GOLD);
+                } else if (tag.equalsIgnoreCase("Private")) {
+                    coloredName = coloredName.formatted(Formatting.BLUE);
+                } else {
+                    coloredName = coloredName.formatted(formatting);
+                }
                 
                 cir.setReturnValue(coloredName);
                 cir.cancel();

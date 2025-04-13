@@ -26,7 +26,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = true; // Set to true to enable debug logging
+    public static final boolean DEBUG_MODE = false; // Set to true to enable debug logging
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {
@@ -86,7 +86,9 @@ public class TaggerMod implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             StatsReader.tick();
             QueueTracker.tick();
-            // AutoStatsChecker.tick();
+            if (DEBUG_MODE) {
+                AutoStatsChecker.tick();
+            }
         });
         
         // Register event for processing chat messages
@@ -154,16 +156,16 @@ public class TaggerMod implements ClientModInitializer {
                     }))
             );
             
-            // Register the AutoSC command
-            /*
-            dispatcher.register(ClientCommandManager.literal("autosc")
-                .executes(context -> {
-                    context.getSource().sendFeedback(Text.literal("Starting automatic stats check for all untagged players..."));
-                    AutoStatsChecker.startAutoStatsCheck();
-                    return 1;
-                })
-            );
-            */
+            // Register the AutoSC command only if debug mode is enabled
+            if (DEBUG_MODE) {
+                dispatcher.register(ClientCommandManager.literal("autosc")
+                    .executes(context -> {
+                        context.getSource().sendFeedback(Text.literal("Starting automatic stats check for all untagged players..."));
+                        AutoStatsChecker.startAutoStatsCheck();
+                        return 1;
+                    })
+                );
+            }
         
             // Updated tag command registration with color parameter
             dispatcher.register(ClientCommandManager.literal("tag")
