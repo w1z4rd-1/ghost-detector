@@ -41,6 +41,14 @@ When a player joins the queue, their stats are immediately displayed in chat:
 - Shows how many days ago the stats were checked if older than 2 weeks
 - Includes any custom tags and colors you've assigned
 
+## Ghost Totem Detection
+
+Automatically detects and announces when a "ghost totem" event occurs.
+
+- Detects ghost totems in both main hand and off-hand
+- Works when switching to a totem slot via hotbar keys or replenishing mainhand or offhand totem
+- Announces to chat: `[INSIGNIA] <ghost totem detected> totem held for X ms (Y ticks)`
+- Supports detection in both vanilla death and servers that put players in spectator mode on death
 
 ## Installation
 

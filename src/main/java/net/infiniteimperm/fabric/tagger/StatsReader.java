@@ -145,7 +145,6 @@ public class StatsReader {
                 // Close the GUI automatically after reading, with a small delay
                 // to ensure all data processing is complete
                 final long closeDelay = 50;
-                final long closeTime = System.currentTimeMillis() + closeDelay;
                 
                 client.execute(() -> {
                     // Add a small delay before closing to ensure everything is processed

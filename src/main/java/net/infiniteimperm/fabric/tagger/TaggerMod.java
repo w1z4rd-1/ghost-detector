@@ -86,6 +86,7 @@ public class TaggerMod implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             StatsReader.tick();
             QueueTracker.tick();
+            GhostTotemDetector.tick(client);
             if (DEBUG_MODE) {
                 AutoStatsChecker.tick();
             }
