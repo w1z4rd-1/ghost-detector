@@ -35,6 +35,12 @@ public class StatsFormatter {
      * Check if the player's stats are private
      */
     private static boolean isStatsPrivate(List<String> guiTexts) {
+        if (guiTexts.size() == 1 && guiTexts.get(0).equals("Player's statistics are private")) {
+            // This is our special marker for private stats detected from chat
+            return true;
+        }
+        
+        // Regular check for GUI-based private stats detection
         for (String line : guiTexts) {
             if (PRIVATE_STATS_PATTERN.matcher(line).find()) {
                 return true;

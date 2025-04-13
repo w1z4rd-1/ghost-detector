@@ -20,6 +20,9 @@ public class StatsReader {
     private static final long GUI_LOADING_DELAY_MS = 100; // Wait time after GUI detected before reading
     private static long guiDetectedTime = 0;
     private static boolean guiDetected = false;
+    
+    // Track the current player we're checking stats for
+    private static String currentPlayerName = null;
 
     /**
      * Executes the stats command for a player and attempts to read the resulting GUI
@@ -36,6 +39,9 @@ public class StatsReader {
         currentTask = new CompletableFuture<>();
         taskStartTime = System.currentTimeMillis();
         guiDetected = false;
+        
+        // Store player name for checking private stats
+        currentPlayerName = playerName;
 
         // Run the stats command
         client.getNetworkHandler().sendChatCommand("stats " + playerName);
@@ -50,6 +56,28 @@ public class StatsReader {
         });
 
         return currentTask;
+    }
+
+    /**
+     * Handle private stats detection from chat message
+     */
+    public static void handlePrivateStats() {
+        // If we're not currently checking stats, ignore
+        if (currentTask == null || currentTask.isDone() || currentPlayerName == null) {
+            return;
+        }
+        
+        TaggerMod.LOGGER.info("Detected private stats for: {}", currentPlayerName);
+        
+        // Create a list with a "private stats" marker
+        List<String> privateStatsList = new ArrayList<>();
+        privateStatsList.add("Player's statistics are private");
+        
+        // Complete the task with this special list
+        currentTask.complete(privateStatsList);
+        
+        // Reset current player name
+        currentPlayerName = null;
     }
 
     /**

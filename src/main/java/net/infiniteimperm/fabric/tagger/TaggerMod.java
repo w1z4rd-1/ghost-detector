@@ -94,6 +94,12 @@ public class TaggerMod implements ClientModInitializer {
             // Convert message to string and process through QueueTracker
             String messageStr = message.getString();
             QueueTracker.onChatMessage(messageStr);
+            
+            // Handle private stats detection directly from chat
+            if (messageStr.contains("Player's statistics are private")) {
+                // If there's an active stats check, mark it as private
+                StatsReader.handlePrivateStats();
+            }
         });
         
         // Initialize QueueTracker

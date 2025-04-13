@@ -1,58 +1,60 @@
-# insignia
- A Minecraft Fabric mod that categorizes other players into custom groups and changes their display names in the tab-menu and above the players' heads to their actual account name with a colour of your choice.
+# Insignia
+
+A Minecraft Fabric mod that enhances your Crystal PvP experience by categorizing players with custom tags and tracking their stats. Insignia adds colored tags to players in the tab menu and provides easy access to Crystal 1v1 statistics.
+
+## Features
+
+- Add colored tags to players in the tab list
+- Automatic stats display when players join the queue
 
 ## Commands
 
-### Tagging Players
-- `/tag <playername> <tag> [color]` - Assigns a tag with optional color
-  - Tab completion for tags: Runner, Competent, Skilled, Creature
-  - Available colors: black, dark_blue, dark_green, dark_aqua, dark_red, dark_purple, gold, gray, dark_gray, blue, green, aqua, red, light_purple, yellow, white
-  - Colors are stored by name (e.g., "blue" instead of "§9")
-  - Default colors:
+### Tag Management
+
+- `/tag <playername> <tag> [color]` - Assign a tag with optional color
+  - Suggested tags: Runner, Competent, Skilled, Creature (tab completion available)
+  - Available colors: black, dark_blue, dark_green, dark_aqua, dark_red, dark_purple, gold, gray, dark_gray, blue, green, aqua, red, light_purple, yellow, white (tab completion available)
+  - Default colors are automatically applied based on tag if no color is specified:
+    - Runner: Dark Red
+    - Competent: Blue (dark_purple)
     - Skilled: Cyan (aqua)
-    - Competent: Purple (dark_purple)
-    - Runner/Creature: Red
-    - Others: Gold
-  - Players tagged as "T" don't show the tag in tab/nametag
-  - Players with private stats are auto-tagged as "private" in blue
-- `/tag remove <playername>` - Removes the tag from a player
-- `/tag help` - Shows the help message
+    - Creature: Red
+    - T: Gold (hidden tag for tracked players)
+    - Private: Blue (hidden tag for players with private stats)
+    - Others: White
+
+- `/tag remove <playername>` - Remove a player's tag
+- `/tag help` - Display help information about the tagging system
 
 ### Stats Checking
-- `/sc <playername>` - Reads a player's stats by running the /stats command and extracting information from the GUI
-  - Displays Crystal 1v1 stats with color-coded formatting
-  - Shows wins, win percentage, current win streak, and best win streak
-  - Colors indicate the player's skill level
-  - Automatically stores these stats in the player's data
-  - Updates last checked timestamp
-  - Handles private statistics
-  - Empty stats (all zeros) are not stored
-  - Automatically tags player as "T" (gold color) if they don't already have a tag
-  - Waits 100ms after the stats GUI appears before reading data to ensure all data is loaded
 
-### Auto Stats Checking
-- `/autosc` - Automatically checks stats for all untagged players in the tab list
-  - Processes players sequentially with a 2-second delay between each
-  - Shows progress updates in chat
-  - Automatically tags players as "T" (gold color) when their stats are fetched
-  - Skips players who already have tags
-  - Only processes players currently visible in the tab list
+- `/sc <playername>` - Check a player's Crystal 1v1 stats
+  - Displays wins, win percentage, current win streak, and best win streak
+  - Color-coded values indicate skill level
+  - Automatically stores the stats for future reference
+  - Tags players with private stats as "Private" (blue color in tab list)
 
-### Automatic Queue Stats Display
-- Immediately shows cached stats when a player joins the queue
-- Detects queue joins through chat messages
-- Shows Crystal 1v1 stats with the same formatting as the `/sc` command
-- Includes the player's tag and color if they've been tagged
-- Shows "X days ago" for stats older than 2 weeks
-- Only uses cached stats from tags.json, never runs /stats automatically
+## Automatic Queue Stats Display
 
-## Data Storage
+When a player joins the queue, their stats are immediately displayed in chat:
+- Shows their tag (if any) and Crystal 1v1 stats
+- Shows how many days ago the stats were checked if older than 2 weeks
+- Includes any custom tags and colors you've assigned
 
-The mod stores player data with the following information:
-- UUID
-- Tag
-- Color (stored as a readable name, e.g., "red", "blue")
-- Crystal 1v1 stats (only stored if player has non-zero stats)
-- hasStats flag
-- Date stats were last checked
-- Private stats flag
+
+## Installation
+
+1. Install Fabric loader for Minecraft
+2. Place the Insignia mod jar file in your `.minecraft/mods` folder
+3. Launch Minecraft with the Fabric profile
+
+## Compatibility
+
+- Compatible with other Fabric mods
+- Does not modify player nametags (compatible with totem pop counters and similar mods)
+- Only affects the tab list and chat messages
+
+## Notes
+- USE AT YOUR OWN RISK, legacy does not have a stats api, and im unsure how they feel about data scraping like this
+- Stats are only shown for Crystal 1v1, other stats are not tracked
+- more features to come

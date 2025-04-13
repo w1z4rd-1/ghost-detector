@@ -32,7 +32,7 @@ public class TagStorage {
     static {
         DEFAULT_COLORS.put("skilled", "aqua"); // Cyan
         DEFAULT_COLORS.put("competent", "dark_purple"); // Purple
-        DEFAULT_COLORS.put("runner", "red"); // Red
+        DEFAULT_COLORS.put("runner", "dark_red"); // Dark Red
         DEFAULT_COLORS.put("creature", "red"); // Red
         DEFAULT_COLORS.put("private", "blue"); // Blue
         DEFAULT_COLORS.put("default", "gold"); // Gold for other tags
@@ -40,7 +40,7 @@ public class TagStorage {
         // Add case variations just to be safe
         DEFAULT_COLORS.put("Skilled", "aqua");
         DEFAULT_COLORS.put("Competent", "dark_purple");
-        DEFAULT_COLORS.put("Runner", "red");
+        DEFAULT_COLORS.put("Runner", "dark_red");
         DEFAULT_COLORS.put("Creature", "red");
     }
     
@@ -358,9 +358,9 @@ public class TagStorage {
      */
     public static String getDefaultColorForTag(String tag) {
         switch (tag) {
-            case "Runner": return "§a"; // green
-            case "Competent": return "§9"; // blue
-            case "Skilled": return "§5"; // purple  
+            case "Runner": return "§4"; // dark red
+            case "Competent": return "§9"; // blue (dark_purple)
+            case "Skilled": return "§b"; // cyan (aqua) 
             case "Creature": return "§c"; // red
             case "T": return "§6"; // gold
             default: return "§f"; // white
