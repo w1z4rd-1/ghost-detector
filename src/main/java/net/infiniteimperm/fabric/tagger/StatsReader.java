@@ -17,7 +17,7 @@ public class StatsReader {
     private static CompletableFuture<List<String>> currentTask = null;
     private static long taskStartTime = 0;
     private static final long TIMEOUT_MS = 500;
-    private static final long GUI_LOADING_DELAY_MS = 100; // Wait time after GUI detected before reading
+    private static final long GUI_LOADING_DELAY_MS = 300; // Increased wait time to 300ms
     private static long guiDetectedTime = 0;
     private static boolean guiDetected = false;
     
@@ -113,8 +113,25 @@ public class StatsReader {
             
             try {
                 List<String> result = extractItemTexts((HandledScreen<?>) currentScreen);
+                
+                // Check if we found Crystal 1v1 stats
+                boolean foundCrystalStats = false;
+                for (String text : result) {
+                    if (text.contains("Crystal 1v1")) {
+                        foundCrystalStats = true;
+                        break;
+                    }
+                }
+                
                 TaggerMod.LOGGER.info("Successfully read " + result.size() + " items from stats GUI");
-                // Don't log each text entry to reduce console spam
+                
+                // Log stats finding result
+                if (foundCrystalStats) {
+                    TaggerMod.LOGGER.info("Found Crystal 1v1 stats in the GUI");
+                } else {
+                    TaggerMod.LOGGER.info("No Crystal 1v1 stats found");
+                }
+                
                 // Only log if in debug mode
                 if (TaggerMod.DEBUG_MODE) {
                     for (String text : result) {
@@ -125,9 +142,23 @@ public class StatsReader {
                 // Complete the task with the results
                 currentTask.complete(result);
                 
-                // Close the GUI automatically after reading
+                // Close the GUI automatically after reading, with a small delay
+                // to ensure all data processing is complete
+                final long closeDelay = 50;
+                final long closeTime = System.currentTimeMillis() + closeDelay;
+                
                 client.execute(() -> {
-                    client.setScreen(null);
+                    // Add a small delay before closing to ensure everything is processed
+                    try {
+                        Thread.sleep(closeDelay);
+                    } catch (InterruptedException e) {
+                        // Ignore interruption
+                    }
+                    
+                    if (client.currentScreen instanceof HandledScreen) {
+                        client.setScreen(null);
+                        TaggerMod.LOGGER.info("Closed stats GUI after reading");
+                    }
                 });
             } catch (Exception e) {
                 TaggerMod.LOGGER.error("Error reading stats GUI", e);

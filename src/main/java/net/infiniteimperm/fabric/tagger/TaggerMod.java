@@ -26,7 +26,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = false; // Set to true to enable debug logging
+    public static final boolean DEBUG_MODE = true; // Set to true to enable debug logging
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {
@@ -101,10 +101,10 @@ public class TaggerMod implements ClientModInitializer {
                 StatsReader.handlePrivateStats();
             }
         });
-        
-        // Initialize QueueTracker
-        QueueTracker.init();
 
+        // Initialize QueueTracker
+        QueueTracker.init();                                                                                                    
+                                            
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             // Register the SC command
             dispatcher.register(ClientCommandManager.literal("sc")
@@ -180,15 +180,16 @@ public class TaggerMod implements ClientModInitializer {
                                 return 0;
                             }
 
-                            Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
-                            if (playerUuidOpt.isEmpty()) {
-                                context.getSource().sendError(Text.literal("Player not found: " + playerName));
-                                return 0;
-                            }
-
-                            // Use null color to apply default color based on tag
-                            TagStorage.setPlayerTag(playerUuidOpt.get(), tag, null);
-                            context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " (using default color)"));
+                            // Use the new async method to get the UUID and set the tag
+                            TagStorage.setPlayerTagByName(playerName, tag, null).thenAccept(success -> {
+                                if (success) {
+                                    context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " (using default color)"));
+                                } else {
+                                    context.getSource().sendError(Text.literal("Could not find player: " + playerName));
+                                }
+                            });
+                            
+                            // Return success immediately, the feedback will be sent when the lookup completes
                             return 1;
                         })
                         .then(ClientCommandManager.argument("color", StringArgumentType.word()).suggests(COLOR_SUGGESTIONS)
@@ -206,22 +207,21 @@ public class TaggerMod implements ClientModInitializer {
                                     return 0;
                                 }
                                 
-                                // We don't need to handle color codes separately anymore - TagStorage.convertToColorName will handle it
-                                // Just pass the color name/code as is to the TagStorage method
-
                                 if (!TagStorage.isValidTag(tag)) {
                                     context.getSource().sendError(Text.literal("Invalid tag: " + tag));
                                     return 0;
                                 }
 
-                                Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
-                                if (playerUuidOpt.isEmpty()) {
-                                    context.getSource().sendError(Text.literal("Player not found: " + playerName));
-                                    return 0;
-                                }
-
-                                TagStorage.setPlayerTag(playerUuidOpt.get(), tag, colorName);
-                                context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " with color " + colorName));
+                                // Use the new async method to get the UUID and set the tag
+                                TagStorage.setPlayerTagByName(playerName, tag, colorName).thenAccept(success -> {
+                                    if (success) {
+                                        context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " with color " + colorName));
+                                    } else {
+                                        context.getSource().sendError(Text.literal("Could not find player: " + playerName));
+                                    }
+                                });
+                                
+                                // Return success immediately, the feedback will be sent when the lookup completes
                                 return 1;
                             })
                         )
@@ -244,23 +244,39 @@ public class TaggerMod implements ClientModInitializer {
                      .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
                          .executes(context -> {
                              String playerName = StringArgumentType.getString(context, "player");
-                             Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
-
-                             if (playerUuidOpt.isEmpty()) {
-                                 context.getSource().sendError(Text.literal("Player not found: " + playerName));
-                                 return 0;
-                             }
-
-                             UUID playerUuid = playerUuidOpt.get();
-                             if (TagStorage.getPlayerTag(playerUuid).isPresent()) {
-                                 TagStorage.removePlayerTag(playerUuid);
-                                 context.getSource().sendFeedback(Text.literal("Removed tag from " + playerName));
-                                 return 1;
-                             } else {
-                                 context.getSource().sendError(Text.literal(playerName + " does not have a tag."));
-                                 return 0;
-                             }
+                             
+                             // Use the async method to remove the tag by setting it to null
+                             TagStorage.setPlayerTagByName(playerName, null, null).thenAccept(success -> {
+                                 if (success) {
+                                     context.getSource().sendFeedback(Text.literal("Removed tag for " + playerName));
+                                 } else {
+                                     context.getSource().sendError(Text.literal("Player " + playerName + " not found"));
+                                 }
+                             });
+                             
+                             // Return success immediately, feedback will be sent via callback
+                             return 1;
                          })))
+                // Rename subcommand
+                .then(ClientCommandManager.literal("rename")
+                    .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
+                        .then(ClientCommandManager.argument("tag", StringArgumentType.string())
+                            .executes(context -> {
+                                String playerName = StringArgumentType.getString(context, "player");
+                                String tag = StringArgumentType.getString(context, "tag");
+                                
+                                // Use the async method to set the tag by name
+                                TagStorage.setPlayerTagByName(playerName, tag, null).thenAccept(success -> {
+                                    if (success) {
+                                        context.getSource().sendFeedback(Text.literal("Changed tag for " + playerName + " to " + tag));
+                                    } else {
+                                        context.getSource().sendError(Text.literal("Player " + playerName + " not found"));
+                                    }
+                                });
+                                
+                                // Return success immediately, feedback will be sent via callback
+                                return 1;
+                            }))))
                 // Base command execution (shows help text if no arguments)
                 .executes(context -> {
                      context.getSource().sendFeedback(Text.literal(

@@ -53,94 +53,127 @@ public class StatsFormatter {
      * Handle a player with private stats
      */
     private static void handlePrivateStats(String playerName) {
-        Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
-        if (playerUuidOpt.isPresent()) {
-            TagStorage.markPlayerStatsPrivate(playerUuidOpt.get());
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§9" + playerName + " has private statistics"), false);
-        } else {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal("§cCould not find player: " + playerName), false);
-        }
+        // Instead of immediately checking and sending a message, wait for the UUID resolution
+        TagStorage.getPlayerUuidByNameAsync(playerName).thenAccept(playerUuidOpt -> {
+            if (playerUuidOpt.isPresent()) {
+                UUID playerUuid = playerUuidOpt.get();
+                TagStorage.markPlayerStatsPrivate(playerUuid);
+                MinecraftClient.getInstance().player.sendMessage(Text.literal("§9" + playerName + " has private statistics"), false);
+            } else {
+                MinecraftClient.getInstance().player.sendMessage(Text.literal("§cCould not find player: " + playerName), false);
+            }
+        });
     }
 
     /**
      * Parse Crystal 1v1 stats from the GUI text and send formatted results to chat
      */
     public static void parseCrystalStats(List<String> guiTexts, String playerName) {
-        boolean inCrystalStats = false;
-        int wins = 0;
-        double winPercent = 0;
-        int currentWinStreak = 0;
-        int bestWinStreak = 0;
+        final boolean[] inCrystalStats = {false};
+        final int[] wins = {0};
+        final double[] winPercent = {0};
+        final int[] currentWinStreak = {0};
+        final int[] bestWinStreak = {0};
+
+        if (TaggerMod.DEBUG_MODE) {
+            TaggerMod.LOGGER.info("Starting to parse Crystal stats for " + playerName + ", found " + guiTexts.size() + " lines");
+        }
 
         for (int i = 0; i < guiTexts.size(); i++) {
             String line = guiTexts.get(i);
             
             // Check if we're in the Crystal 1v1 section
-            if (line.equals("Crystal 1v1")) {
-                inCrystalStats = true;
+            if (line.contains("Crystal 1v1")) {
+                inCrystalStats[0] = true;
+                if (TaggerMod.DEBUG_MODE) {
+                    TaggerMod.LOGGER.info("Found Crystal 1v1 section at line " + i + ": " + line);
+                }
                 continue;
             }
             
             // Check if we've moved past Crystal 1v1 to another section
-            if (inCrystalStats && line.contains("-----------------") && i < guiTexts.size() - 1 
+            if (inCrystalStats[0] && line.contains("-----------------") && i < guiTexts.size() - 1 
                     && !guiTexts.get(i+1).contains("Crystal 1v1")) {
                 break;
             }
             
-            if (inCrystalStats) {
+            if (inCrystalStats[0]) {
                 // Parse win percentage
                 Matcher winPercentMatcher = WIN_PERCENT_PATTERN.matcher(line);
                 if (winPercentMatcher.find()) {
-                    winPercent = Double.parseDouble(winPercentMatcher.group(1));
+                    winPercent[0] = Double.parseDouble(winPercentMatcher.group(1));
+                    if (TaggerMod.DEBUG_MODE) {
+                        TaggerMod.LOGGER.info("Found win percent: " + winPercent[0]);
+                    }
                 }
                 
                 // Parse current win streak
                 Matcher winStreakMatcher = WIN_STREAK_PATTERN.matcher(line);
                 if (winStreakMatcher.find()) {
-                    currentWinStreak = Integer.parseInt(winStreakMatcher.group(1));
+                    currentWinStreak[0] = Integer.parseInt(winStreakMatcher.group(1));
+                    if (TaggerMod.DEBUG_MODE) {
+                        TaggerMod.LOGGER.info("Found current win streak: " + currentWinStreak[0]);
+                    }
                 }
                 
                 // Parse best win streak
                 Matcher highestWinStreakMatcher = HIGHEST_WIN_STREAK_PATTERN.matcher(line);
                 if (highestWinStreakMatcher.find()) {
-                    bestWinStreak = Integer.parseInt(highestWinStreakMatcher.group(1));
+                    bestWinStreak[0] = Integer.parseInt(highestWinStreakMatcher.group(1));
+                    if (TaggerMod.DEBUG_MODE) {
+                        TaggerMod.LOGGER.info("Found best win streak: " + bestWinStreak[0]);
+                    }
                 }
                 
                 // Parse wins
                 Matcher winsMatcher = WINS_PATTERN.matcher(line);
                 if (winsMatcher.find()) {
-                    wins = Integer.parseInt(winsMatcher.group(1));
+                    wins[0] = Integer.parseInt(winsMatcher.group(1));
+                    if (TaggerMod.DEBUG_MODE) {
+                        TaggerMod.LOGGER.info("Found wins: " + wins[0]);
+                    }
                 }
             }
         }
 
         // Always update player stats entry regardless of whether we found Crystal 1v1 stats
-        Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
-        if (playerUuidOpt.isPresent()) {
-            UUID playerUuid = playerUuidOpt.get();
-            
-            if (inCrystalStats) {
-                // Create stats object and store in TagStorage
-                if (wins == 0 && winPercent == 0 && currentWinStreak == 0 && bestWinStreak == 0) {
-                    // No valid stats, send null to indicate no stats
-                    TagStorage.updatePlayerStats(playerUuid, null);
+        // Use async UUID lookup to prevent race conditions when player isn't in tab list
+        TagStorage.getPlayerUuidByNameAsync(playerName).thenAccept(playerUuidOpt -> {
+            if (playerUuidOpt.isPresent()) {
+                UUID playerUuid = playerUuidOpt.get();
+                
+                if (inCrystalStats[0]) {
+                    // Create stats object and store in TagStorage
+                    if (wins[0] == 0 && winPercent[0] == 0 && currentWinStreak[0] == 0 && bestWinStreak[0] == 0) {
+                        // No valid stats, send null to indicate no stats
+                        if (TaggerMod.DEBUG_MODE) {
+                            TaggerMod.LOGGER.warn("Found Crystal 1v1 section but no valid stats values were extracted for " + playerName);
+                        }
+                        TagStorage.updatePlayerStats(playerUuid, null);
+                        MinecraftClient.getInstance().player.sendMessage(Text.literal("§cNo Crystal 1v1 stats found for " + playerName), false);
+                    } else {
+                        // Valid stats found
+                        TagStorage.CrystalStats stats = TagStorage.createCrystalStats(wins[0], winPercent[0], currentWinStreak[0], bestWinStreak[0]);
+                        TagStorage.updatePlayerStats(playerUuid, stats);
+                        
+                        // Show formatted stats in chat
+                        sendFormattedStats(playerName, wins[0], winPercent[0], currentWinStreak[0], bestWinStreak[0]);
+                    }
                 } else {
-                    // Valid stats found
-                    TagStorage.CrystalStats stats = TagStorage.createCrystalStats(wins, winPercent, currentWinStreak, bestWinStreak);
-                    TagStorage.updatePlayerStats(playerUuid, stats);
-                    
-                    // Show formatted stats in chat
-                    sendFormattedStats(playerName, wins, winPercent, currentWinStreak, bestWinStreak);
-                    return; // Stop here as we've already shown the stats
+                    // No Crystal 1v1 section found, update with null stats
+                    if (TaggerMod.DEBUG_MODE) {
+                        TaggerMod.LOGGER.info("No Crystal 1v1 section found for " + playerName);
+                    }
+                    TagStorage.updatePlayerStats(playerUuid, null);
+                    MinecraftClient.getInstance().player.sendMessage(Text.literal("§cNo Crystal 1v1 stats found for " + playerName), false);
                 }
             } else {
-                // No Crystal 1v1 section found, update with null stats
-                TagStorage.updatePlayerStats(playerUuid, null);
+                // Still couldn't get UUID even after async lookup
+                MinecraftClient.getInstance().player.sendMessage(Text.literal("§cCould not find player: " + playerName), false);
             }
-        }
+        });
         
-        // Only reach here if no stats were displayed
-        MinecraftClient.getInstance().player.sendMessage(Text.literal("§cNo Crystal 1v1 stats found for " + playerName), false);
+        // Don't need to show message here since it's handled in the async callback
     }
 
     /**
@@ -152,33 +185,36 @@ public class StatsFormatter {
         String currentWinStreakColor = getWinStreakColor(currentWinStreak);
         String bestWinStreakColor = getWinStreakColor(bestWinStreak);
         
-        // Add tag if player has one
-        String displayName = playerName;
-        Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
-        if (playerUuidOpt.isPresent()) {
-            UUID playerUuid = playerUuidOpt.get();
-            Optional<TagStorage.PlayerData> playerDataOpt = TagStorage.getPlayerData(playerUuid);
-            
-            if (playerDataOpt.isPresent()) {
-                TagStorage.PlayerData playerData = playerDataOpt.get();
-                String tag = playerData.getTag();
+        // Add tag if player has one - using async to be consistent
+        final String[] displayName = {playerName};
+        
+        TagStorage.getPlayerUuidByNameAsync(playerName).thenAccept(playerUuidOpt -> {
+            if (playerUuidOpt.isPresent()) {
+                UUID playerUuid = playerUuidOpt.get();
+                Optional<TagStorage.PlayerData> playerDataOpt = TagStorage.getPlayerData(playerUuid);
                 
-                if (tag != null && !tag.isEmpty()) {
-                    String colorCode = playerData.getColorCode();
-                    displayName = colorCode + "[" + tag + "] §r" + playerName;
+                if (playerDataOpt.isPresent()) {
+                    TagStorage.PlayerData playerData = playerDataOpt.get();
+                    String tag = playerData.getTag();
+                    
+                    if (tag != null && !tag.isEmpty()) {
+                        String colorCode = playerData.getColorCode();
+                        displayName[0] = colorCode + "[" + tag + "] §r" + playerName;
+                    }
                 }
             }
-        }
-        
-        String formattedMessage = String.format(
-            "%s, W: %s%d\n§rW%%: %s%.1f%%, §rCWS: %s%d, §rBWS: %s%d",
-            displayName, winColor, wins,
-            winPercentColor, winPercent,
-            currentWinStreakColor, currentWinStreak,
-            bestWinStreakColor, bestWinStreak
-        );
-        
-        MinecraftClient.getInstance().player.sendMessage(Text.literal(formattedMessage), false);
+            
+            // Now we can format the message with the updated displayName
+            String formattedMessage = String.format(
+                "%s, W: %s%d\n§rW%%: %s%.1f%%, §rCWS: %s%d, §rBWS: %s%d",
+                displayName[0], winColor, wins,
+                winPercentColor, winPercent,
+                currentWinStreakColor, currentWinStreak,
+                bestWinStreakColor, bestWinStreak
+            );
+            
+            MinecraftClient.getInstance().player.sendMessage(Text.literal(formattedMessage), false);
+        });
     }
 
     /**

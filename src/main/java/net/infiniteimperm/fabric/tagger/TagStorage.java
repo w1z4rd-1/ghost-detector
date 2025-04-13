@@ -9,6 +9,9 @@ import net.minecraft.util.Formatting;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -16,13 +19,17 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class TagStorage {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_DIR = FabricLoader.getInstance().getConfigDir().resolve(TaggerMod.MOD_ID);
     private static final Path TAG_FILE = CONFIG_DIR.resolve("tags.json");
+    private static final Path UUID_CACHE_FILE = CONFIG_DIR.resolve("uuid_cache.json");
     private static Map<UUID, PlayerData> playerData = new HashMap<>();
+    private static Map<String, UUID> uuidCache = new HashMap<>(); // Cache username -> UUID mappings
 
     // Valid tags for tab completion
     public static final String[] VALID_TAGS = {"Runner", "Competent", "Skilled", "Creature"};
@@ -235,6 +242,9 @@ public class TagStorage {
                 TaggerMod.LOGGER.info("Tag file not found, creating new map.");
                 saveTags(); // Create the file if it doesn't exist
             }
+            
+            // Load UUID cache
+            loadUuidCache();
         } catch (IOException e) {
             TaggerMod.LOGGER.error("Failed to load player data", e);
             playerData = new HashMap<>(); // Use empty map on error
@@ -326,15 +336,89 @@ public class TagStorage {
     }
 
     public static Optional<UUID> getPlayerUuidByName(String playerName) {
+        // First, normalize the name for case-insensitive lookups
+        String normalizedName = playerName.toLowerCase();
+        
+        // Try the UUID cache first
+        if (uuidCache.containsKey(normalizedName)) {
+            UUID uuid = uuidCache.get(normalizedName);
+            TaggerMod.LOGGER.info("Found UUID for {} in cache: {}", playerName, uuid);
+            return Optional.of(uuid);
+        }
+        
+        // Next, try the player list (online players)
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.getNetworkHandler() != null) {
-            return client.getNetworkHandler().getPlayerList()
+            Optional<UUID> onlineUuid = client.getNetworkHandler().getPlayerList()
                     .stream()
                     .filter(entry -> entry.getProfile().getName().equalsIgnoreCase(playerName))
-                    .map(entry -> entry.getProfile().getId())
+                    .map(entry -> {
+                        UUID uuid = entry.getProfile().getId();
+                        // Update cache since we found them online
+                        uuidCache.put(normalizedName, uuid);
+                        saveUuidCache();
+                        return uuid;
+                    })
                     .findFirst();
+            
+            if (onlineUuid.isPresent()) {
+                TaggerMod.LOGGER.info("Found UUID for {} in player list: {}", playerName, onlineUuid.get());
+                return onlineUuid;
+            }
         }
-        return Optional.empty(); // Cannot find UUID if not connected or player not online
+        
+        // If they're not online, we need to use the Mojang API (asynchronously)
+        TaggerMod.LOGGER.info("Player {} not found in tab list, trying Mojang API...", playerName);
+        
+        // Start the API query but return an empty result for now
+        // The caller will need to handle the player not being found immediately
+        CompletableFuture<Optional<UUID>> future = fetchUuidFromMojang(playerName);
+        
+        // We could use future.join() here to make this method blocking, but that would
+        // freeze the game while we wait for the API response. Instead, we'll return empty
+        // and the caller will need to handle the async nature of this lookup.
+        
+        return Optional.empty();
+    }
+    
+    /**
+     * Get player UUID by name, with async support
+     * This will first check the tab list and cache, then if not found, try the Mojang API
+     * @param playerName Player name to look up
+     * @return A future that completes with the player's UUID, or empty if not found
+     */
+    public static CompletableFuture<Optional<UUID>> getPlayerUuidByNameAsync(String playerName) {
+        // First try the cache and online players (which is immediate)
+        Optional<UUID> immediateResult = getPlayerUuidByName(playerName);
+        if (immediateResult.isPresent()) {
+            return CompletableFuture.completedFuture(immediateResult);
+        }
+        
+        // If not found immediately, try the Mojang API
+        return fetchUuidFromMojang(playerName);
+    }
+    
+    /**
+     * Set a player's tag by name, using async UUID lookup if needed
+     * @param playerName Player name
+     * @param tag Tag to set
+     * @param colorOrCode Color to use
+     * @return Future that completes when the tag is set, with true if successful
+     */
+    public static CompletableFuture<Boolean> setPlayerTagByName(String playerName, String tag, String colorOrCode) {
+        return getPlayerUuidByNameAsync(playerName).thenApply(uuidOpt -> {
+            if (uuidOpt.isPresent()) {
+                UUID uuid = uuidOpt.get();
+                // Update the username->UUID cache
+                uuidCache.put(playerName.toLowerCase(), uuid);
+                saveUuidCache();
+                
+                // Set the tag
+                setPlayerTag(uuid, tag, colorOrCode);
+                return true;
+            }
+            return false;
+        });
     }
     
     public static boolean isValidTagForCompletion(String tag) {
@@ -433,5 +517,130 @@ public class TagStorage {
             case "white": return Formatting.WHITE;
             default: return Formatting.GOLD;
         }
+    }
+
+    // For Mojang API responses
+    private static class MojangProfile {
+        public String id; // UUID without dashes
+        public String name;
+        
+        public UUID toUUID() {
+            // Convert Mojang's UUID (without dashes) to a proper UUID
+            String uuid = id.replaceFirst(
+                "(\\p{XDigit}{8})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}{4})(\\p{XDigit}+)",
+                "$1-$2-$3-$4-$5"
+            );
+            return UUID.fromString(uuid);
+        }
+    }
+
+    /**
+     * Load the UUID cache from disk
+     */
+    private static void loadUuidCache() {
+        try {
+            if (Files.exists(UUID_CACHE_FILE)) {
+                Reader reader = Files.newBufferedReader(UUID_CACHE_FILE);
+                Type type = new TypeToken<HashMap<String, String>>() {}.getType();
+                Map<String, String> stringCache = GSON.fromJson(reader, type);
+                reader.close();
+                
+                if (stringCache != null) {
+                    // Convert string UUIDs to UUID objects
+                    uuidCache.clear();
+                    for (Map.Entry<String, String> entry : stringCache.entrySet()) {
+                        try {
+                            uuidCache.put(entry.getKey().toLowerCase(), UUID.fromString(entry.getValue()));
+                        } catch (IllegalArgumentException e) {
+                            TaggerMod.LOGGER.warn("Invalid UUID in cache for player {}: {}", entry.getKey(), entry.getValue());
+                        }
+                    }
+                    TaggerMod.LOGGER.info("Loaded {} UUID cache entries.", uuidCache.size());
+                } else {
+                    uuidCache = new HashMap<>();
+                }
+            }
+        } catch (IOException e) {
+            TaggerMod.LOGGER.error("Failed to load UUID cache", e);
+            uuidCache = new HashMap<>();
+        }
+    }
+    
+    /**
+     * Save the UUID cache to disk
+     */
+    private static void saveUuidCache() {
+        try {
+            Files.createDirectories(CONFIG_DIR);
+            Writer writer = Files.newBufferedWriter(UUID_CACHE_FILE);
+            
+            // Convert UUID objects to strings for storage
+            Map<String, String> stringCache = new HashMap<>();
+            for (Map.Entry<String, UUID> entry : uuidCache.entrySet()) {
+                stringCache.put(entry.getKey(), entry.getValue().toString());
+            }
+            
+            GSON.toJson(stringCache, writer);
+            writer.close();
+        } catch (IOException e) {
+            TaggerMod.LOGGER.error("Failed to save UUID cache", e);
+        }
+    }
+    
+    /**
+     * Query the Mojang API to get a player's UUID
+     * @param playerName The player's name
+     * @return The player's UUID, or empty if not found or rate limited
+     */
+    private static CompletableFuture<Optional<UUID>> fetchUuidFromMojang(String playerName) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                TaggerMod.LOGGER.info("Fetching UUID for {} from Mojang API", playerName);
+                URL url = new URL("https://api.mojang.com/users/profiles/minecraft/" + playerName);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                
+                int responseCode = connection.getResponseCode();
+                if (responseCode == 200) {
+                    // Read the response
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                        StringBuilder response = new StringBuilder();
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            response.append(line);
+                        }
+                        
+                        // Parse the JSON response
+                        MojangProfile profile = GSON.fromJson(response.toString(), MojangProfile.class);
+                        if (profile != null && profile.id != null) {
+                            UUID uuid = profile.toUUID();
+                            
+                            // Cache the result
+                            uuidCache.put(playerName.toLowerCase(), uuid);
+                            saveUuidCache();
+                            
+                            TaggerMod.LOGGER.info("Successfully retrieved UUID for {}: {}", playerName, uuid);
+                            return Optional.of(uuid);
+                        }
+                    }
+                } else if (responseCode == 429) {
+                    // Rate limited
+                    TaggerMod.LOGGER.warn("Rate limited by Mojang API when looking up {}", playerName);
+                } else if (responseCode == 404) {
+                    // Player not found
+                    TaggerMod.LOGGER.warn("Player {} not found in Mojang API", playerName);
+                } else {
+                    // Other error
+                    TaggerMod.LOGGER.warn("Error retrieving UUID for {}: HTTP {}", playerName, responseCode);
+                }
+            } catch (IOException e) {
+                TaggerMod.LOGGER.error("Failed to query Mojang API for " + playerName, e);
+            }
+            
+            return Optional.empty();
+        });
     }
 } 
