@@ -4,6 +4,7 @@ import net.infiniteimperm.fabric.tagger.TagStorage;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
+import net.minecraft.text.Style;
 import net.minecraft.util.Formatting;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,25 +17,32 @@ import java.util.UUID;
 @Mixin(PlayerEntity.class)
 public abstract class PlayerEntityMixin {
 
+    // Commenting out this mixin to avoid interfering with other mods that modify player nametags
+    /*
     @Inject(method = "getDisplayName", at = @At("HEAD"), cancellable = true)
     private void tagger$modifyDisplayName(CallbackInfoReturnable<Text> cir) {
         // Cast 'this' to PlayerEntity to access its methods
         PlayerEntity playerEntity = (PlayerEntity) (Object) this;
         UUID playerUuid = playerEntity.getUuid();
+        
+        // Get player data from TagStorage
+        Optional<TagStorage.PlayerData> playerDataOpt = TagStorage.getPlayerData(playerUuid);
 
-        Optional<String> tagOpt = TagStorage.getPlayerTag(playerUuid);
+        if (playerDataOpt.isPresent()) {
+            TagStorage.PlayerData playerData = playerDataOpt.get();
+            String tag = playerData.getTag();
+            
+            // Get the player's formatting
+            Formatting formatting = playerData.getFormatting();
+            
+            // Get the player's base name
+            Text baseName = playerEntity.getName();
 
-        if (tagOpt.isPresent()) {
-            String tag = tagOpt.get();
-
-            // Only add prefix if the tag is not "T"
-            if (!"T".equalsIgnoreCase(tag)) {
-                // Create the prefix [TAG]
-                MutableText prefix = Text.literal("[" + tag + "] ")
-                                         .formatted(Formatting.GOLD);
-
-                // Get the player's base name (without risking recursion)
-                Text baseName = playerEntity.getName(); // PlayerEntity.getName() gives the base profile name
+            // Only add prefix if the tag should be displayed
+            if (playerData.shouldDisplayTag()) {
+                // Create the prefix [TAG] with the correct color
+                MutableText prefix = Text.literal("[" + tag + "] ");
+                prefix = prefix.formatted(formatting);
 
                 // Combine prefix and base name
                 MutableText modifiedName = prefix.append(baseName);
@@ -42,8 +50,16 @@ public abstract class PlayerEntityMixin {
                 // Set the modified name and cancel the original method
                 cir.setReturnValue(modifiedName);
                 cir.cancel();
+            } else {
+                // Just color the name for T and Private tags
+                MutableText coloredName = Text.literal(playerEntity.getName().getString());
+                coloredName = coloredName.formatted(formatting);
+                
+                cir.setReturnValue(coloredName);
+                cir.cancel();
             }
         }
-        // If no tag or tag is "T", do nothing, let original method run.
+        // If no tag, do nothing, let original method run.
     }
+    */
 } 

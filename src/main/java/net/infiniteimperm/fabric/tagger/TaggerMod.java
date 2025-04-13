@@ -6,9 +6,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.infiniteimperm.fabric.tagger.TagStorage;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.command.CommandSource;
 import net.minecraft.text.Text;
@@ -16,12 +16,17 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.HashMap;
 
 public class TaggerMod implements ClientModInitializer {
-    public static final String MOD_ID = "tagger";
+    public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
+    public static final boolean DEBUG_MODE = false; // Set to true to enable debug logging
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {
@@ -36,27 +41,136 @@ public class TaggerMod implements ClientModInitializer {
         return CommandSource.suggestMatching(Arrays.asList(), builder);
     };
 
-    // SuggestionProvider type is FabricClientCommandSource
+    // SuggestionProvider type is FabricClientCommandSource for tag suggestions
     private static final SuggestionProvider<FabricClientCommandSource> TAG_SUGGESTIONS = (context, builder) ->
             // Use CommandSource.suggestMatching helper
             CommandSource.suggestMatching(Arrays.asList(TagStorage.VALID_TAGS), builder);
+            
+    // SuggestionProvider for color codes
+    private static final SuggestionProvider<FabricClientCommandSource> COLOR_SUGGESTIONS = (context, builder) -> {
+        List<String> colorOptions = Arrays.asList(
+            "black", "dark_blue", "dark_green", "dark_aqua", "dark_red", "dark_purple", 
+            "gold", "gray", "dark_gray", "blue", "green", "aqua", "red", "light_purple", 
+            "yellow", "white"
+        );
+        return CommandSource.suggestMatching(colorOptions, builder);
+    };
+
+    // Map color names to Minecraft color codes
+    private static final Map<String, String> COLOR_MAP = new HashMap<>();
+    static {
+        COLOR_MAP.put("black", "§0");
+        COLOR_MAP.put("dark_blue", "§1");
+        COLOR_MAP.put("dark_green", "§2");
+        COLOR_MAP.put("dark_aqua", "§3");
+        COLOR_MAP.put("dark_red", "§4");
+        COLOR_MAP.put("dark_purple", "§5");
+        COLOR_MAP.put("gold", "§6");
+        COLOR_MAP.put("gray", "§7");
+        COLOR_MAP.put("dark_gray", "§8");
+        COLOR_MAP.put("blue", "§9");
+        COLOR_MAP.put("green", "§a");
+        COLOR_MAP.put("aqua", "§b");
+        COLOR_MAP.put("red", "§c");
+        COLOR_MAP.put("light_purple", "§d");
+        COLOR_MAP.put("yellow", "§e");
+        COLOR_MAP.put("white", "§f");
+    }
 
     @Override
     public void onInitializeClient() {
-        LOGGER.info("Tagger Client Mod initialized");
+        LOGGER.info("Insignia Client Mod initialized");
         TagStorage.loadTags(); // Load tags on initialization
 
+        // Register the tick event for StatsReader and QueueTracker
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            StatsReader.tick();
+            QueueTracker.tick();
+            // AutoStatsChecker.tick();
+        });
+        
+        // Register event for processing chat messages
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            // Convert message to string and process through QueueTracker
+            String messageStr = message.getString();
+            QueueTracker.onChatMessage(messageStr);
+        });
+        
+        // Initialize QueueTracker
+        QueueTracker.init();
+
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(ClientCommandManager.literal("tag")
-                // Main command execution (now assigns tags)
+            // Register the SC command
+            dispatcher.register(ClientCommandManager.literal("sc")
                 .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
-                    .then(ClientCommandManager.argument("tag", StringArgumentType.string()).suggests(TAG_SUGGESTIONS)
+                    .executes(context -> {
+                        String playerName = StringArgumentType.getString(context, "player");
+                        context.getSource().sendFeedback(Text.literal("Reading stats for " + playerName + "..."));
+                        
+                        // Call the StatsReader to read the player's stats
+                        CompletableFuture<List<String>> future = StatsReader.readPlayerStats(playerName);
+                        
+                        // Handle the result when it completes
+                        future.thenAccept(texts -> {
+                            if (texts.isEmpty()) {
+                                LOGGER.warn("No stats data was found for " + playerName);
+                            } else {
+                                LOGGER.info("Found " + texts.size() + " text entries from stats for " + playerName);
+                                // Process the stats with our formatter
+                                StatsFormatter.parseStats(texts, playerName);
+                                
+                                // Automatically tag the player as "T"
+                                Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
+                                if (playerUuidOpt.isPresent()) {
+                                    UUID playerUuid = playerUuidOpt.get();
+                                    // Only set tag if player doesn't already have one
+                                    if (TagStorage.getPlayerTag(playerUuid).isEmpty()) {
+                                        // Check if the player has stats or private stats
+                                        Optional<TagStorage.PlayerData> playerDataOpt = TagStorage.getPlayerData(playerUuid);
+                                        if (playerDataOpt.isPresent()) {
+                                            TagStorage.PlayerData playerData = playerDataOpt.get();
+                                            if (playerData.isPrivateStats()) {
+                                                // Tag as Private for private stats
+                                                TagStorage.setPlayerTag(playerUuid, "Private", "blue");
+                                                LOGGER.info("Auto-tagged " + playerName + " as Private (private stats) after reading stats");
+                                            } else if (playerData.hasStats()) {
+                                                // Tag as T only if they have valid stats
+                                                TagStorage.setPlayerTag(playerUuid, "T", null);
+                                                LOGGER.info("Auto-tagged " + playerName + " as T after reading stats");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        
+                        return 1;
+                    }))
+            );
+            
+            // Register the AutoSC command
+            /*
+            dispatcher.register(ClientCommandManager.literal("autosc")
+                .executes(context -> {
+                    context.getSource().sendFeedback(Text.literal("Starting automatic stats check for all untagged players..."));
+                    AutoStatsChecker.startAutoStatsCheck();
+                    return 1;
+                })
+            );
+            */
+        
+            // Updated tag command registration with color parameter
+            dispatcher.register(ClientCommandManager.literal("tag")
+                // Main command execution now with more flexible structure
+                .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
+                    .then(ClientCommandManager.argument("tag", StringArgumentType.word()).suggests(TAG_SUGGESTIONS)
                         .executes(context -> {
+                            // Tag command without color specified (use default color)
                             String playerName = StringArgumentType.getString(context, "player");
                             String tag = StringArgumentType.getString(context, "tag");
 
                             if (!TagStorage.isValidTag(tag)) {
-                                context.getSource().sendError(Text.literal("Invalid tag: " + tag + ". Valid tags are: " + String.join(", ", TagStorage.VALID_TAGS)));
+                                context.getSource().sendError(Text.literal("Invalid tag: " + tag));
                                 return 0;
                             }
 
@@ -66,18 +180,56 @@ public class TaggerMod implements ClientModInitializer {
                                 return 0;
                             }
 
-                            TagStorage.setPlayerTag(playerUuidOpt.get(), tag);
-                            context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag));
+                            // Use null color to apply default color based on tag
+                            TagStorage.setPlayerTag(playerUuidOpt.get(), tag, null);
+                            context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " (using default color)"));
                             return 1;
-                        })))
+                        })
+                        .then(ClientCommandManager.argument("color", StringArgumentType.word()).suggests(COLOR_SUGGESTIONS)
+                            .executes(context -> {
+                                // Tag command with color specified
+                                String playerName = StringArgumentType.getString(context, "player");
+                                String tag = StringArgumentType.getString(context, "tag");
+                                String colorName = StringArgumentType.getString(context, "color");
+
+                                // Convert color name to color code
+                                String colorNameLower = colorName.toLowerCase();
+                                
+                                if (!TagStorage.COLOR_NAME_TO_CODE.containsKey(colorNameLower) && !colorName.startsWith("§")) {
+                                    context.getSource().sendError(Text.literal("Unknown color: " + colorName));
+                                    return 0;
+                                }
+                                
+                                // We don't need to handle color codes separately anymore - TagStorage.convertToColorName will handle it
+                                // Just pass the color name/code as is to the TagStorage method
+
+                                if (!TagStorage.isValidTag(tag)) {
+                                    context.getSource().sendError(Text.literal("Invalid tag: " + tag));
+                                    return 0;
+                                }
+
+                                Optional<UUID> playerUuidOpt = TagStorage.getPlayerUuidByName(playerName);
+                                if (playerUuidOpt.isEmpty()) {
+                                    context.getSource().sendError(Text.literal("Player not found: " + playerName));
+                                    return 0;
+                                }
+
+                                TagStorage.setPlayerTag(playerUuidOpt.get(), tag, colorName);
+                                context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " with color " + colorName));
+                                return 1;
+                            })
+                        )
+                    )
+                )
                 // Help subcommand
                 .then(ClientCommandManager.literal("help")
                     .executes(context -> {
                         context.getSource().sendFeedback(Text.literal(
-                            "§6Tagger Mod Commands:\n" +
-                            "§e/tag <playername> <tag> §7- Assigns a tag (Runner, Competent, Skilled, T)\n" +
+                            "§6Insignia Mod Commands:\n" +
+                            "§e/tag <playername> <tag> [color] §7- Assigns a tag with optional color\n" +
                             "§e/tag remove <playername> §7- Removes the tag from a player\n" +
-                            "§e/tag help §7- Shows this help message"
+                            "§e/tag help §7- Shows this help message\n" + 
+                            "§e/sc <playername> §7- Shows Crystal 1v1 stats for a player"
                         ));
                         return 1;
                     }))
@@ -106,10 +258,11 @@ public class TaggerMod implements ClientModInitializer {
                 // Base command execution (shows help text if no arguments)
                 .executes(context -> {
                      context.getSource().sendFeedback(Text.literal(
-                            "§6Tagger Mod Commands:\n" +
-                            "§e/tag <playername> <tag> §7- Assigns a tag (Runner, Competent, Skilled, T)\n" +
+                            "§6Insignia Mod Commands:\n" +
+                            "§e/tag <playername> <tag> [color] §7- Assigns a tag with optional color\n" +
                             "§e/tag remove <playername> §7- Removes the tag from a player\n" +
-                            "§e/tag help §7- Shows this help message"
+                            "§e/tag help §7- Shows this help message\n" + 
+                            "§e/sc <playername> §7- Shows Crystal 1v1 stats for a player"
                         ));
                     return 1;
                 })
