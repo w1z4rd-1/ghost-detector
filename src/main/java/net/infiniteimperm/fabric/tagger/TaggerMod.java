@@ -10,6 +10,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.command.CommandSource;
@@ -31,7 +33,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = false; // Set to false to disable debug logging and /autosc command
+    public static final boolean DEBUG_MODE = true; // Set to false to disable debug logging and /autosc command
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {
@@ -131,6 +133,29 @@ public class TaggerMod implements ClientModInitializer {
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
             SignWatcher.handleBlockBreak(world, pos);
         });
+
+        // Register HUD render callback for Totem Warning Overlay (in-game view)
+        HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
+            // Check condition and render directly here, avoid calling overlay class method
+            if (TotemWarningOverlay.shouldShowWarning()) {
+                int screenWidth = MinecraftClient.getInstance().getWindow().getScaledWidth();
+                int screenHeight = MinecraftClient.getInstance().getWindow().getScaledHeight();
+                drawContext.fill(0, 0, screenWidth, screenHeight, 0x40FF0000); // Draw overlay directly
+            }
+        });
+
+        // Register WorldRenderEvents.END to draw overlay potentially over screens
+        WorldRenderEvents.END.register(context -> {
+            // Check condition and render if needed
+            if (TotemWarningOverlay.shouldShowWarning()) {
+                // Need to set up DrawContext or render differently here
+                // This is more complex than initially thought. Let's simplify.
+                // Revert to just HudRenderCallback for now and investigate screen rendering later.
+            }
+        });
+        
+        // >> REVERTING WorldRenderEvents approach for now <<
+        // Let's stick to HudRenderCallback as screen overlay is complex.
 
         // Initialize QueueTracker
         QueueTracker.init();                                                                                                    
