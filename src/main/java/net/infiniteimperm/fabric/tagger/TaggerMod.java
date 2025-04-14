@@ -33,7 +33,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = true; // Set to false to disable debug logging and /autosc command
+    public static final boolean DEBUG_MODE = false; // Set to false to disable debug logging and /autosc command
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {

@@ -7,7 +7,7 @@ version = project.mod_version
 group = project.maven_group
 
 base {
-	archivesName = project.archives_base_name
+	archivesName = "Insignia"
 }
 
 repositories {
@@ -86,7 +86,7 @@ java {
 
 jar {
 	from("LICENSE") {
-		rename { "${it}_${project.archives_base_name}"}
+		rename { "${it}_Insignia"}
 	}
 }
 
@@ -95,7 +95,7 @@ task copyToMultiMC(type: Copy) {
     dependsOn remapJar
     from remapJar.archiveFile
     into "C:/Users/Terac/Documents/mmc-develop-win32/MultiMC/instances/Simply Optimized 1.21.3-1.0/.minecraft/mods"
-    rename { "${project.archives_base_name}-${project.version}.jar" }
+    rename { "Insignia.jar" }
 }
 
 // Make the build task depend on copyToMultiMC so it automatically copies the JAR
