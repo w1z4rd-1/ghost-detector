@@ -239,9 +239,9 @@ public class StatsFormatter {
      */
     public static String getWinStreakColor(int winStreak) {
         if (winStreak >= 1000) return "§5";
-        else if (winStreak >= 800) return "§c";
-        else if (winStreak >= 600) return "§d";
-        else if (winStreak >= 400) return "§b§3";
+        else if (winStreak >= 750) return "§c";
+        else if (winStreak >= 500) return "§d";
+        else if (winStreak >= 250) return "§b§3";
         else if (winStreak >= 200) return "§5";
         else if (winStreak >= 100) return "§e";
         else if (winStreak >= 75) return "§4";
@@ -258,18 +258,18 @@ public class StatsFormatter {
      * Get color code for win/loss ratio
      */
     public static String getWinLossColor(double wlr) {
-        if (wlr >= 100) return "§5";
-        else if (wlr >= 80) return "§c";
-        else if (wlr >= 60) return "§d";
-        else if (wlr >= 40) return "§b§3";
-        else if (wlr >= 20) return "§5";
-        else if (wlr >= 10) return "§e";
-        else if (wlr >= 7.5) return "§4";
-        else if (wlr >= 5) return "§2";
-        else if (wlr >= 3) return "§b";
-        else if (wlr >= 1.5) return "§6";
-        else if (wlr >= 1) return "§f";
-        else if (wlr >= 0.25) return "§7";
+        if (wlr >= 99) return "§5";
+        else if (wlr >= 95) return "§c";
+        else if (wlr >= 92.5) return "§d";
+        else if (wlr >= 90) return "§b§3";
+        else if (wlr >= 87.5) return "§5";
+        else if (wlr >= 85) return "§e";
+        else if (wlr >= 82.5) return "§4";
+        else if (wlr >= 80) return "§2";
+        else if (wlr >= 75) return "§b";
+        else if (wlr >= 70) return "§6";
+        else if (wlr >= 50) return "§f";
+        else if (wlr >= 25) return "§7";
         else if (wlr >= 0) return "§8";
         else return "";
     }

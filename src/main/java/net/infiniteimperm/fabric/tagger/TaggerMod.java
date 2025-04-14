@@ -8,10 +8,15 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.command.CommandSource;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -26,7 +31,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = false; // Set to true to enable debug logging
+    public static final boolean DEBUG_MODE = false; // Set to false to disable debug logging and /autosc command
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {
@@ -82,11 +87,12 @@ public class TaggerMod implements ClientModInitializer {
         LOGGER.info("Insignia Client Mod initialized");
         TagStorage.loadTags(); // Load tags on initialization
 
-        // Register the tick event for StatsReader and QueueTracker
+        // Register the tick event for various trackers
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             StatsReader.tick();
             QueueTracker.tick();
             GhostTotemDetector.tick(client);
+            SignWatcher.tick(); // Add SignWatcher tick
             if (DEBUG_MODE) {
                 AutoStatsChecker.tick();
             }
@@ -96,6 +102,7 @@ public class TaggerMod implements ClientModInitializer {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             // Convert message to string and process through QueueTracker
             String messageStr = message.getString();
+            
             QueueTracker.onChatMessage(messageStr);
             
             // Handle private stats detection directly from chat
@@ -103,6 +110,26 @@ public class TaggerMod implements ClientModInitializer {
                 // If there's an active stats check, mark it as private
                 StatsReader.handlePrivateStats();
             }
+        });
+        
+        // Register event to filter unwanted messages
+        ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+            // Check if the message should be filtered out
+            String messageStr = message.getString();
+            return !QueueTracker.shouldFilterMessage(messageStr);
+        });
+
+        // Register event for player block interaction (for SignWatcher)
+        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (hand == Hand.MAIN_HAND && SignWatcher.handleInteractBlock(player, world, hitResult)) {
+                return ActionResult.SUCCESS; // Prevent default sign behavior if we handled it
+            }
+            return ActionResult.PASS; // Continue with default behavior
+        });
+
+        // Register event for block breaking (for SignWatcher)
+        PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+            SignWatcher.handleBlockBreak(world, pos);
         });
 
         // Initialize QueueTracker
@@ -157,6 +184,21 @@ public class TaggerMod implements ClientModInitializer {
                     }))
             );
             
+            // Register the LB command alias
+            dispatcher.register(ClientCommandManager.literal("lb")
+                .executes(context -> {
+                    MinecraftClient client = context.getSource().getClient();
+                    if (client != null && client.getNetworkHandler() != null) {
+                        client.getNetworkHandler().sendChatCommand("topstats mostwins Crystal1v1");
+                        context.getSource().sendFeedback(Text.literal("Executed: /topstats mostwins Crystal1v1"));
+                        return 1; // Command success
+                    } else {
+                        context.getSource().sendError(Text.literal("Could not send command."));
+                        return 0; // Command failure
+                    }
+                })
+            );
+            
             // Register the AutoSC command only if debug mode is enabled
             if (DEBUG_MODE) {
                 dispatcher.register(ClientCommandManager.literal("autosc")
@@ -172,21 +214,21 @@ public class TaggerMod implements ClientModInitializer {
             dispatcher.register(ClientCommandManager.literal("tag")
                 // Main command execution now with more flexible structure
                 .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
-                    .then(ClientCommandManager.argument("tag", StringArgumentType.word()).suggests(TAG_SUGGESTIONS)
+                    .then(ClientCommandManager.argument("tag", StringArgumentType.string())
                         .executes(context -> {
                             // Tag command without color specified (use default color)
                             String playerName = StringArgumentType.getString(context, "player");
                             String tag = StringArgumentType.getString(context, "tag");
 
                             if (!TagStorage.isValidTag(tag)) {
-                                context.getSource().sendError(Text.literal("Invalid tag: " + tag));
+                                context.getSource().sendError(Text.literal("Invalid tag (cannot be empty): " + tag));
                                 return 0;
                             }
 
                             // Use the new async method to get the UUID and set the tag
                             TagStorage.setPlayerTagByName(playerName, tag, null).thenAccept(success -> {
                                 if (success) {
-                                    context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " (using default color)"));
+                                    context.getSource().sendFeedback(Text.literal("Tagged \"" + playerName + "\" as \"" + tag + "\" (using default color)"));
                                 } else {
                                     context.getSource().sendError(Text.literal("Could not find player: " + playerName));
                                 }
@@ -211,14 +253,14 @@ public class TaggerMod implements ClientModInitializer {
                                 }
                                 
                                 if (!TagStorage.isValidTag(tag)) {
-                                    context.getSource().sendError(Text.literal("Invalid tag: " + tag));
+                                     context.getSource().sendError(Text.literal("Invalid tag (cannot be empty): " + tag));
                                     return 0;
                                 }
 
                                 // Use the new async method to get the UUID and set the tag
                                 TagStorage.setPlayerTagByName(playerName, tag, colorName).thenAccept(success -> {
                                     if (success) {
-                                        context.getSource().sendFeedback(Text.literal("Tagged " + playerName + " as " + tag + " with color " + colorName));
+                                        context.getSource().sendFeedback(Text.literal("Tagged \"" + playerName + "\" as \"" + tag + "\" with color " + colorName));
                                     } else {
                                         context.getSource().sendError(Text.literal("Could not find player: " + playerName));
                                     }
