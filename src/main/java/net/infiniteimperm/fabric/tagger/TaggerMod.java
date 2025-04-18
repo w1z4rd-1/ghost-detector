@@ -88,6 +88,7 @@ public class TaggerMod implements ClientModInitializer {
     public void onInitializeClient() {
         LOGGER.info("Insignia Client Mod initialized");
         TagStorage.loadTags(); // Load tags on initialization
+        LilBitchConfig.loadConfig(); // Load LilBitch configuration
 
         // Register the tick event for various trackers
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -234,12 +235,27 @@ public class TaggerMod implements ClientModInitializer {
                     })
                 );
             }
+            
+            // Register the lilbitch command
+            dispatcher.register(ClientCommandManager.literal("lilbitch")
+                .executes(context -> {
+                    SignWatcher.toggleLilBitchMode();
+                    return 1;
+                })
+                .then(ClientCommandManager.literal("reload")
+                    .executes(context -> {
+                        LilBitchConfig.loadConfig();
+                        context.getSource().sendFeedback(Text.literal("§aReloaded LilBitch configuration"));
+                        return 1;
+                    })
+                )
+            );
         
             // Updated tag command registration with color parameter
             dispatcher.register(ClientCommandManager.literal("tag")
                 // Main command execution now with more flexible structure
                 .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
-                    .then(ClientCommandManager.argument("tag", StringArgumentType.string())
+                    .then(ClientCommandManager.argument("tag", StringArgumentType.string()).suggests(TAG_SUGGESTIONS)
                         .executes(context -> {
                             // Tag command without color specified (use default color)
                             String playerName = StringArgumentType.getString(context, "player");
@@ -305,7 +321,9 @@ public class TaggerMod implements ClientModInitializer {
                             "§e/tag <playername> <tag> [color] §7- Assigns a tag with optional color\n" +
                             "§e/tag remove <playername> §7- Removes the tag from a player\n" +
                             "§e/tag help §7- Shows this help message\n" + 
-                            "§e/sc <playername> §7- Shows Crystal 1v1 stats for a player"
+                            "§e/sc <playername> §7- Shows Crystal 1v1 stats for a player\n" +
+                            "§e/lilbitch §7- Toggles LilBitch mode for dodging dangerous players\n" +
+                            "§e/lilbitch reload §7- Reloads LilBitch configuration from file"
                         ));
                         return 1;
                     }))
@@ -330,7 +348,7 @@ public class TaggerMod implements ClientModInitializer {
                 // Rename subcommand
                 .then(ClientCommandManager.literal("rename")
                     .then(ClientCommandManager.argument("player", StringArgumentType.string()).suggests(PLAYER_NAME_SUGGESTIONS)
-                        .then(ClientCommandManager.argument("tag", StringArgumentType.string())
+                        .then(ClientCommandManager.argument("tag", StringArgumentType.string()).suggests(TAG_SUGGESTIONS)
                             .executes(context -> {
                                 String playerName = StringArgumentType.getString(context, "player");
                                 String tag = StringArgumentType.getString(context, "tag");
@@ -354,7 +372,9 @@ public class TaggerMod implements ClientModInitializer {
                             "§e/tag <playername> <tag> [color] §7- Assigns a tag with optional color\n" +
                             "§e/tag remove <playername> §7- Removes the tag from a player\n" +
                             "§e/tag help §7- Shows this help message\n" + 
-                            "§e/sc <playername> §7- Shows Crystal 1v1 stats for a player"
+                            "§e/sc <playername> §7- Shows Crystal 1v1 stats for a player\n" +
+                            "§e/lilbitch §7- Toggles LilBitch mode for dodging dangerous players\n" +
+                            "§e/lilbitch reload §7- Reloads LilBitch configuration from file"
                         ));
                     return 1;
                 })

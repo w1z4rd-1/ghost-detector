@@ -86,8 +86,8 @@ public class GhostTotemDetector {
                 TaggerMod.LOGGER.info("[GhostTotem] No current screen");
             }
             
-            // Call our death handler
-            onPlayerDeath(player);
+            // Call our death handler, passing the spectator transition status
+            onPlayerDeath(player, spectatorTransition);
         }
         wasAlive = isAlive;
         lastHealth = currentHealth;
@@ -174,7 +174,7 @@ public class GhostTotemDetector {
     }
 
     // This handles player death with ghost totem detection
-    private static void onPlayerDeath(ClientPlayerEntity player) {
+    private static void onPlayerDeath(ClientPlayerEntity player, boolean spectatorTransition) {
         // Check if we were holding a totem when we died
         if (totemEquipTimeNano > 0) {
             long deathTimeNano = System.nanoTime();
@@ -217,10 +217,16 @@ public class GhostTotemDetector {
             // Send the message to chat
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null && client.getNetworkHandler() != null) {
-                // Format the message to send to public chat with hand information
-                String publicMessage = String.format("[INSIGNIA] <%s Ghost Detected> totem held for %dms (%d ticks)", 
-                                                 handType, durationMillis, ticksHeld);
-                
+                String publicMessage;
+                if (spectatorTransition) {
+                    // For spectator transitions, use a specific message without timing
+                    publicMessage = String.format("[INSIGNIA] <%s Ghost Detected>", handType);
+                } else {
+                    // For other deaths (potential ghost totems), include timing info
+                    publicMessage = String.format("[INSIGNIA] <%s Ghost Detected> totem held for %dms (%d ticks)", 
+                                                     handType, durationMillis, ticksHeld);
+                }
+                                
                 // Send the message as a regular chat message (will be visible to other players)
                 client.getNetworkHandler().sendChatMessage(publicMessage);
             }
@@ -237,9 +243,10 @@ public class GhostTotemDetector {
     // Deprecated in favor of the more reliable onPlayerDeath method
     public static void onPlayerHealthUpdate(ClientPlayerEntity player, float health) {
         // If health dropped to zero, call our unified death handler
-        if (health <= 0) {
+        // Assuming spectator transition is false when triggered only by health update
+        if (health <= 0 && wasAlive) { // Add wasAlive check to prevent multiple calls if health stays at 0
             TaggerMod.LOGGER.info("[GhostTotem] Death detected via health update method. Health: {}", health);
-            onPlayerDeath(player);
+            onPlayerDeath(player, false); // Pass false for spectatorTransition
         }
     }
     

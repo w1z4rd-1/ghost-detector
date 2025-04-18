@@ -226,6 +226,7 @@ public class TagStorage {
     }
 
     public static void loadTags() {
+        TaggerMod.LOGGER.debug("Attempting to load tags from: {}", TAG_FILE);
         try {
             Files.createDirectories(CONFIG_DIR); // Ensure directory exists
             if (Files.exists(TAG_FILE)) {
@@ -234,31 +235,46 @@ public class TagStorage {
                 playerData = GSON.fromJson(reader, type);
                 reader.close();
                 if (playerData == null) { // Handle case where file is empty or invalid
+                    TaggerMod.LOGGER.warn("tags.json was loaded as null (likely empty or corrupted), initializing empty map.");
                     playerData = new HashMap<>();
                 }
-                TaggerMod.LOGGER.info("Loaded {} player data entries.", playerData.size());
+                TaggerMod.LOGGER.info("Loaded {} player data entries from tags.json.", playerData.size());
             } else {
                 playerData = new HashMap<>();
-                TaggerMod.LOGGER.info("Tag file not found, creating new map.");
+                TaggerMod.LOGGER.info("tags.json not found, creating new map.");
                 saveTags(); // Create the file if it doesn't exist
             }
-            
+            TaggerMod.LOGGER.debug("Finished loading tags.");
+
             // Load UUID cache
             loadUuidCache();
-        } catch (IOException e) {
-            TaggerMod.LOGGER.error("Failed to load player data", e);
+        } catch (Exception e) { // Catch broader exceptions during load
+            TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            TaggerMod.LOGGER.error("!!! FAILED TO LOAD tags.json !!!");
+            TaggerMod.LOGGER.error("!!! Path: {} !!!", TAG_FILE);
+            TaggerMod.LOGGER.error("!!! Error: {} !!!", e.getMessage());
+            TaggerMod.LOGGER.error("!!! Stack Trace: ", e); // Log the full stack trace
+            TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            TaggerMod.LOGGER.error("!!! Player tags will be empty for this session. !!!");
             playerData = new HashMap<>(); // Use empty map on error
         }
     }
 
     public static void saveTags() {
+        TaggerMod.LOGGER.debug("Attempting to save {} player data entries to: {}", playerData.size(), TAG_FILE);
         try {
-            Files.createDirectories(CONFIG_DIR); // Ensure directory exists again just in case
+            Files.createDirectories(CONFIG_DIR); // Ensure directory exists
             Writer writer = Files.newBufferedWriter(TAG_FILE);
             GSON.toJson(playerData, writer);
             writer.close();
+            TaggerMod.LOGGER.debug("Finished saving tags.");
         } catch (IOException e) {
-            TaggerMod.LOGGER.error("Failed to save player data", e);
+            TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            TaggerMod.LOGGER.error("!!! FAILED TO SAVE tags.json !!!");
+            TaggerMod.LOGGER.error("!!! Path: {} !!!", TAG_FILE);
+            TaggerMod.LOGGER.error("!!! Error: {} !!!", e.getMessage());
+            TaggerMod.LOGGER.error("!!! Stack Trace: ", e);
+            TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         }
     }
 
@@ -538,52 +554,47 @@ public class TagStorage {
      * Load the UUID cache from disk
      */
     private static void loadUuidCache() {
-        try {
-            if (Files.exists(UUID_CACHE_FILE)) {
-                Reader reader = Files.newBufferedReader(UUID_CACHE_FILE);
-                Type type = new TypeToken<HashMap<String, String>>() {}.getType();
-                Map<String, String> stringCache = GSON.fromJson(reader, type);
-                reader.close();
-                
-                if (stringCache != null) {
-                    // Convert string UUIDs to UUID objects
-                    uuidCache.clear();
-                    for (Map.Entry<String, String> entry : stringCache.entrySet()) {
-                        try {
-                            uuidCache.put(entry.getKey().toLowerCase(), UUID.fromString(entry.getValue()));
-                        } catch (IllegalArgumentException e) {
-                            TaggerMod.LOGGER.warn("Invalid UUID in cache for player {}: {}", entry.getKey(), entry.getValue());
-                        }
-                    }
-                    TaggerMod.LOGGER.info("Loaded {} UUID cache entries.", uuidCache.size());
-                } else {
+        TaggerMod.LOGGER.debug("Attempting to load UUID cache from: {}", UUID_CACHE_FILE);
+        if (Files.exists(UUID_CACHE_FILE)) {
+            try (Reader reader = Files.newBufferedReader(UUID_CACHE_FILE)) {
+                Type type = new TypeToken<HashMap<String, UUID>>() {}.getType();
+                uuidCache = GSON.fromJson(reader, type);
+                if (uuidCache == null) {
+                    TaggerMod.LOGGER.warn("uuid_cache.json loaded as null, initializing empty map.");
                     uuidCache = new HashMap<>();
                 }
+                TaggerMod.LOGGER.info("Loaded {} entries from UUID cache.", uuidCache.size());
+            } catch (Exception e) {
+                TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                TaggerMod.LOGGER.error("!!! FAILED TO LOAD uuid_cache.json !!!");
+                TaggerMod.LOGGER.error("!!! Path: {} !!!", UUID_CACHE_FILE);
+                TaggerMod.LOGGER.error("!!! Error: {} !!!", e.getMessage());
+                TaggerMod.LOGGER.error("!!! Stack Trace: ", e);
+                TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                uuidCache = new HashMap<>();
             }
-        } catch (IOException e) {
-            TaggerMod.LOGGER.error("Failed to load UUID cache", e);
+        } else {
+            TaggerMod.LOGGER.info("uuid_cache.json not found, creating new map.");
             uuidCache = new HashMap<>();
         }
+        TaggerMod.LOGGER.debug("Finished loading UUID cache.");
     }
     
     /**
      * Save the UUID cache to disk
      */
     private static void saveUuidCache() {
-        try {
-            Files.createDirectories(CONFIG_DIR);
-            Writer writer = Files.newBufferedWriter(UUID_CACHE_FILE);
-            
-            // Convert UUID objects to strings for storage
-            Map<String, String> stringCache = new HashMap<>();
-            for (Map.Entry<String, UUID> entry : uuidCache.entrySet()) {
-                stringCache.put(entry.getKey(), entry.getValue().toString());
-            }
-            
-            GSON.toJson(stringCache, writer);
-            writer.close();
+        TaggerMod.LOGGER.debug("Attempting to save {} UUID cache entries to: {}", uuidCache.size(), UUID_CACHE_FILE);
+        try (Writer writer = Files.newBufferedWriter(UUID_CACHE_FILE)) {
+            GSON.toJson(uuidCache, writer);
+            TaggerMod.LOGGER.debug("Finished saving UUID cache.");
         } catch (IOException e) {
-            TaggerMod.LOGGER.error("Failed to save UUID cache", e);
+            TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            TaggerMod.LOGGER.error("!!! FAILED TO SAVE uuid_cache.json !!!");
+            TaggerMod.LOGGER.error("!!! Path: {} !!!", UUID_CACHE_FILE);
+            TaggerMod.LOGGER.error("!!! Error: {} !!!", e.getMessage());
+            TaggerMod.LOGGER.error("!!! Stack Trace: ", e);
+            TaggerMod.LOGGER.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         }
     }
     
