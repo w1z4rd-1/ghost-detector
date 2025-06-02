@@ -6,7 +6,8 @@
     "PlayerEntityMixin"
   ],
   "client": [
-    "PlayerListHudMixin"
+    "PlayerListHudMixin",
+    "CommandInterceptorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

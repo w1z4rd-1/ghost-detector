@@ -7,10 +7,14 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
+import net.minecraft.world.World;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 
 public class GhostTotemDetector {
 
@@ -214,9 +218,9 @@ public class GhostTotemDetector {
                              handType.toLowerCase(), TIME_FORMAT.format(new Date(System.currentTimeMillis() - durationMillis)), 
                              TIME_FORMAT.format(new Date()), durationMillis, ticksHeld);
 
-            // Send the message to chat
+            // Check for players in render distance and send message accordingly
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.getNetworkHandler() != null) {
+            if (client.player != null && client.getNetworkHandler() != null && client.world != null) {
                 String publicMessage;
                 if (spectatorTransition) {
                     // For spectator transitions, use a specific message without timing
@@ -226,9 +230,33 @@ public class GhostTotemDetector {
                     publicMessage = String.format("[INSIGNIA] <%s Ghost Detected> totem held for %dms (%d ticks)", 
                                                      handType, durationMillis, ticksHeld);
                 }
-                                
-                // Send the message as a regular chat message (will be visible to other players)
-                client.getNetworkHandler().sendChatMessage(publicMessage);
+                
+                // Get players in render distance (using a reasonable render distance of ~16 blocks)
+                World world = client.world;
+                Vec3d playerPos = player.getPos();
+                double renderDistance = 16.0; // Standard chunk render distance
+                Box renderArea = new Box(playerPos.subtract(renderDistance, renderDistance, renderDistance),
+                                       playerPos.add(renderDistance, renderDistance, renderDistance));
+                
+                // Get nearby players excluding ourselves
+                List<PlayerEntity> nearbyPlayers = world.getEntitiesByClass(PlayerEntity.class, renderArea, entity -> 
+                    entity != player // Exclude ourselves
+                );
+                
+                TaggerMod.LOGGER.info("[GhostTotem] Found {} players in render distance", nearbyPlayers.size());
+                
+                if (nearbyPlayers.size() == 1) {
+                    // Exactly one player in render distance - send private message
+                    PlayerEntity targetPlayer = nearbyPlayers.get(0);
+                    String targetPlayerName = targetPlayer.getName().getString();
+                    
+                    TaggerMod.LOGGER.info("[GhostTotem] Sending private message to {}", targetPlayerName);
+                    client.getNetworkHandler().sendChatCommand("w " + targetPlayerName + " " + publicMessage);
+                } else {
+                    // 0 or more than 1 player in render distance - send to global chat
+                    TaggerMod.LOGGER.info("[GhostTotem] Sending to global chat (not exactly 1 player in range)");
+                    client.getNetworkHandler().sendChatMessage(publicMessage);
+                }
             }
 
             // Reset the timer immediately to prevent multiple messages for the same death event

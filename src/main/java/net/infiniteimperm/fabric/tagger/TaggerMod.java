@@ -33,7 +33,61 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = false; // Set to false to disable debug logging and /autosc command
+    public static final boolean DEBUG_MODE = true; // Set to false to disable debug logging
+
+    /**
+     * Utility class to prevent running the stats command too frequently
+     */
+    public static class StatsCommandRateLimiter {
+        private static final double MIN_COMMAND_INTERVAL_SECONDS = 1.2;
+        private static long lastCommandTimeMs = 0;
+        
+        /**
+         * Check if enough time has passed since the last stats command
+         * @return true if a command can be run, false if it's too soon
+         */
+        public static boolean canRunCommand() {
+            long currentTimeMs = System.currentTimeMillis();
+            long elapsedMs = currentTimeMs - lastCommandTimeMs;
+            boolean canRun = elapsedMs >= (MIN_COMMAND_INTERVAL_SECONDS * 1000);
+            
+            if (DEBUG_MODE && !canRun) {
+                LOGGER.info("[RateLimiter] Too soon to run stats command. Wait {} more ms", 
+                    (MIN_COMMAND_INTERVAL_SECONDS * 1000) - elapsedMs);
+            }
+            
+            return canRun;
+        }
+        
+        /**
+         * Record that a command was run
+         */
+        public static void recordCommandRun() {
+            lastCommandTimeMs = System.currentTimeMillis();
+            if (DEBUG_MODE) {
+                LOGGER.info("[RateLimiter] Stats command time recorded: {}", lastCommandTimeMs);
+            }
+        }
+        
+        /**
+         * Helper method to run a stats command if allowed
+         * @param playerName The player to check stats for
+         * @return true if command was sent, false if rate limited
+         */
+        public static boolean runStatsCommand(String playerName) {
+            if (!canRunCommand()) {
+                return false;
+            }
+            
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.getNetworkHandler() != null) {
+                client.getNetworkHandler().sendChatCommand("sc " + playerName);
+                recordCommandRun();
+                return true;
+            }
+            return false;
+        }
+    }
 
     // SuggestionProvider type is FabricClientCommandSource
     private static final SuggestionProvider<FabricClientCommandSource> PLAYER_NAME_SUGGESTIONS = (context, builder) -> {
@@ -96,6 +150,8 @@ public class TaggerMod implements ClientModInitializer {
             QueueTracker.tick();
             GhostTotemDetector.tick(client);
             SignWatcher.tick(); // Add SignWatcher tick
+            KitDetector.tick(); // Add KitDetector tick
+            QueueDurabilityChecker.resetConfirmation(); // Reset confirmation timeout
             if (DEBUG_MODE) {
                 AutoStatsChecker.tick();
             }
@@ -107,6 +163,7 @@ public class TaggerMod implements ClientModInitializer {
             String messageStr = message.getString();
             
             QueueTracker.onChatMessage(messageStr);
+            KitDetector.onChatMessage(messageStr); // Add kit detection
             
             // Handle private stats detection directly from chat
             if (messageStr.contains("Player's statistics are private")) {
@@ -115,8 +172,9 @@ public class TaggerMod implements ClientModInitializer {
             }
         });
         
-        // Register event to filter unwanted messages
+        // Register event for intercepting commands before they're sent
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+            // This intercepts incoming messages, but we need outgoing command interception
             // Check if the message should be filtered out
             String messageStr = message.getString();
             return !QueueTracker.shouldFilterMessage(messageStr);
@@ -145,21 +203,8 @@ public class TaggerMod implements ClientModInitializer {
             }
         });
 
-        // Register WorldRenderEvents.END to draw overlay potentially over screens
-        WorldRenderEvents.END.register(context -> {
-            // Check condition and render if needed
-            if (TotemWarningOverlay.shouldShowWarning()) {
-                // Need to set up DrawContext or render differently here
-                // This is more complex than initially thought. Let's simplify.
-                // Revert to just HudRenderCallback for now and investigate screen rendering later.
-            }
-        });
-        
-        // >> REVERTING WorldRenderEvents approach for now <<
-        // Let's stick to HudRenderCallback as screen overlay is complex.
-
         // Initialize QueueTracker
-        QueueTracker.init();                                                                                                    
+        QueueTracker.init();
                                             
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             // Register the SC command
@@ -168,6 +213,10 @@ public class TaggerMod implements ClientModInitializer {
                     .executes(context -> {
                         String playerName = StringArgumentType.getString(context, "player");
                         context.getSource().sendFeedback(Text.literal("Reading stats for " + playerName + "..."));
+                        
+                        // Record command in rate limiter since we're manually sending it
+                        // (We're not rate-limiting manual commands, but we need to record them)
+                        StatsCommandRateLimiter.recordCommandRun();
                         
                         // Call the StatsReader to read the player's stats
                         CompletableFuture<List<String>> future = StatsReader.readPlayerStats(playerName);

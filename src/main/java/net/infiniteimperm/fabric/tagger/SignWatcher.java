@@ -23,6 +23,8 @@ public class SignWatcher {
 
     private static final double PROXIMITY_DISTANCE = 4.5;
     private static final double PROXIMITY_DISTANCE_SQ = PROXIMITY_DISTANCE * PROXIMITY_DISTANCE; // Use squared distance for efficiency
+    private static final double UNTRACKED_PLAYER_CHECK_DISTANCE = 10.0;
+    private static final double UNTRACKED_PLAYER_CHECK_DISTANCE_SQ = UNTRACKED_PLAYER_CHECK_DISTANCE * UNTRACKED_PLAYER_CHECK_DISTANCE;
     private static final MinecraftClient client = MinecraftClient.getInstance();
 
     private static BlockPos watchedSignPos = null;
@@ -50,10 +52,8 @@ public class SignWatcher {
                     player.sendMessage(Text.literal("§aStarted watching sign at " + pos.toShortString()), false);
                     TaggerMod.LOGGER.info("[SignWatcher] Started watching sign at {}", pos);
                     
-                    if (lilBitchMode) {
-                        // Find the best player in the lobby and display their stats
-                        displayBestPlayerInLobby();
-                    }
+                    // Find the best player in the lobby and display their stats (always do this)
+                    displayBestPlayerInLobby();
                 }
                 return true; // Indicate we handled the interaction
             }
@@ -85,7 +85,7 @@ public class SignWatcher {
     /**
      * Stops watching the current sign.
      */
-    private static void stopWatching(String reason) {
+    public static void stopWatching(String reason) {
         if (isWatching) {
             isWatching = false;
             watchedSignPos = null;
@@ -125,25 +125,50 @@ public class SignWatcher {
         
         // Create a bounding box around the sign
         Box checkArea = new Box(watchedSignPos).expand(checkDistance);
+        
+        // Create a larger bounding box for checking untracked players
+        Box untrackedCheckArea = new Box(watchedSignPos).expand(UNTRACKED_PLAYER_CHECK_DISTANCE);
 
         // Get players within the bounding box (more efficient than checking all world players)
-        List<PlayerEntity> nearbyPlayers = world.getEntitiesByClass(PlayerEntity.class, checkArea, entity -> 
-            entity != self && // Exclude self
-            entity.getPos().squaredDistanceTo(signCenter) <= checkDistanceSq // Precise distance check
+        List<PlayerEntity> nearbyPlayers = world.getEntitiesByClass(PlayerEntity.class, untrackedCheckArea, entity -> 
+            entity != self // Exclude self
         );
 
         for (PlayerEntity nearbyPlayer : nearbyPlayers) {
             UUID playerUuid = nearbyPlayer.getUuid();
+            String playerName = nearbyPlayer.getName().getString();
+            double distanceSq = nearbyPlayer.getPos().squaredDistanceTo(signCenter);
 
             // Check if we've already processed this player in this watch session
             if (recentlyCheckedPlayers.contains(playerUuid)) {
                 continue;
             }
 
-            String playerName = nearbyPlayer.getName().getString();
-
             // Check the player's tag
             Optional<TagStorage.PlayerData> playerDataOpt = TagStorage.getPlayerData(playerUuid);
+            
+            // For any untracked player within 10 blocks, run /sc
+            if (playerDataOpt.isEmpty() && distanceSq <= UNTRACKED_PLAYER_CHECK_DISTANCE_SQ) {
+                TaggerMod.LOGGER.info("[SignWatcher] Detected untracked player {} within {} blocks. Running /sc.", 
+                    playerName, UNTRACKED_PLAYER_CHECK_DISTANCE);
+                    
+                // Use the rate limiter when running stats command
+                if (TaggerMod.StatsCommandRateLimiter.runStatsCommand(playerName)) {
+                    TaggerMod.LOGGER.info("[SignWatcher] Sent stats command for {}", playerName);
+                } else {
+                    TaggerMod.LOGGER.info("[SignWatcher] Stats command for {} was rate limited", playerName);
+                }
+                
+                // Mark as checked so we don't spam /sc
+                recentlyCheckedPlayers.add(playerUuid);
+                continue;
+            }
+            
+            // Only check for dangerous players if they're within the smaller radius
+            if (distanceSq > checkDistanceSq) {
+                // Player is too far away for danger check, but we've already handled /sc if needed
+                continue;
+            }
             
             if (lilBitchMode) {
                 // In LilBitch mode we need to do additional checks
@@ -375,24 +400,27 @@ public class SignWatcher {
             PlayerScoreEntry bestPlayer = playerScores.get(0);
             TagStorage.CrystalStats stats = bestPlayer.playerData.getCrystalStats();
             
+            // Get player tag if exists
+            String playerTag = bestPlayer.playerData.getTag();
+            String colorCode = bestPlayer.playerData.getColorCode();
+            String displayName = colorCode + "[" + playerTag + "] " + bestPlayer.playerName;
+            
             // Normalize win percentage for display
             double storedWinPercent = stats.getWinPercent();
             boolean isAlreadyPercentage = storedWinPercent > 1.0 && storedWinPercent <= 100.0;
             double displayWinPercent = isAlreadyPercentage ? storedWinPercent : storedWinPercent * 100;
             
+            // Simplified message showing only tag, name, win%, and total wins
             String message = String.format(
-                "§d[LilBitch] Best player: §f%s §d(Score: §f%.2f§d) §7- §fWins: %d§7, §fWin Rate: %.1f%%§7, §fWS: %d§7, §fBWS: %d", 
-                bestPlayer.playerName,
-                bestPlayer.score,
+                "§dBest player: %s §7- §fWins: %d§7, §fWin Rate: %.1f%%", 
+                displayName,
                 stats.getWins(),
-                displayWinPercent, // Display the correct percentage
-                stats.getCurrentWinStreak(),
-                stats.getBestWinStreak()
+                displayWinPercent
             );
             
             client.player.sendMessage(Text.literal(message), false);
         } else {
-            client.player.sendMessage(Text.literal("§d[LilBitch] No players with stats found in lobby"), false);
+            client.player.sendMessage(Text.literal("§dNo players with stats found in lobby"), false);
         }
     }
     

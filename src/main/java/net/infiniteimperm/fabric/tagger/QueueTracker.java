@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class QueueTracker {
@@ -30,9 +31,11 @@ public class QueueTracker {
     // Map to store pending stats checks
     private static Map<String, CompletableFuture<Void>> pendingStatsChecks = new ConcurrentHashMap<>();
     
-    // Add patterns for messages to filter out
-    private static final String LEAVE_MESSAGE = "You can use \"/leave\" to leave the game.";
-    private static final String STATS_COUNTDOWN_MESSAGE = "You have 10 seconds to leave before statistics are counted.";
+    // List of messages to filter out
+    private static final List<String> FILTERED_MESSAGES = Arrays.asList(
+        "You can use \"/leave\" to leave the game.",
+        "You have 10 seconds to leave before statistics are counted."
+    );
     
     /**
      * Initialize the queue tracker
@@ -59,6 +62,9 @@ public class QueueTracker {
                 return;
             }
             
+            // Stop watching any signs when another player joins the queue
+            SignWatcher.stopWatching("Stopped watching sign because " + playerName + " joined the queue.");
+            
             // Immediately show stats for this player or schedule a check
             showPlayerStats(playerName);
         }
@@ -70,8 +76,8 @@ public class QueueTracker {
      * @return true if the message should be filtered (hidden), false otherwise
      */
     public static boolean shouldFilterMessage(String message) {
-        // Check if the message matches any of our filter patterns
-        return message.equals(LEAVE_MESSAGE) || message.equals(STATS_COUNTDOWN_MESSAGE);
+        // Check if the message is in our list of filtered messages
+        return FILTERED_MESSAGES.contains(message);
     }
     
     /**
@@ -152,7 +158,12 @@ public class QueueTracker {
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             if (client.player != null && client.getNetworkHandler() != null) {
                 TaggerMod.LOGGER.info("[QueueTracker] Executing delayed /sc check for {}", playerName);
-                client.getNetworkHandler().sendChatCommand("sc " + playerName);
+                // Use the rate limiter
+                if (TaggerMod.StatsCommandRateLimiter.runStatsCommand(playerName)) {
+                    TaggerMod.LOGGER.info("[QueueTracker] Sent stats command for {}", playerName);
+                } else {
+                    TaggerMod.LOGGER.info("[QueueTracker] Stats command for {} was rate limited", playerName);
+                }
             }
             pendingStatsChecks.remove(playerName); // Remove from pending list
         }, CompletableFuture.delayedExecutor(STATS_CHECK_DELAY_SECONDS, TimeUnit.SECONDS));
