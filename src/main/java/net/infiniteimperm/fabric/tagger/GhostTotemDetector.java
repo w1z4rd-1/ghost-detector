@@ -15,6 +15,8 @@ import net.minecraft.world.World;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class GhostTotemDetector {
 
@@ -36,6 +38,9 @@ public class GhostTotemDetector {
     
     // Constants
     private static final double SECONDS_PER_TICK = 0.05; // 50ms per tick (20 ticks per second)
+
+    // Pattern to detect death chat messages like "<player> was killed" or "<player> was killed by <killer>" (with optional '!')
+    private static final Pattern CHAT_DEATH_PATTERN = Pattern.compile("([a-zA-Z0-9_]+) was killed(?: by [a-zA-Z0-9_]+)?!?", Pattern.CASE_INSENSITIVE);
 
     // Called every client tick
     public static void tick(MinecraftClient client) {
@@ -285,5 +290,47 @@ public class GhostTotemDetector {
     
     public static long getGhostTotemHoldTime() {
         return ghostTotemHoldTime;
+    }
+
+    /**
+     * Called for every incoming chat message. If the message indicates that the local player was
+     * just killed (according to the server-side death broadcast), we trigger the same ghost-totem
+     * logic that would fire when we detect the death via health drop or spectator transition.
+     */
+    public static void onChatMessage(String message) {
+        // Quick sanity check to avoid unnecessary regex work
+        if (message == null || !message.toLowerCase().contains("was killed")) {
+            return;
+        }
+
+        Matcher matcher = CHAT_DEATH_PATTERN.matcher(message);
+        if (!matcher.find()) {
+            return;
+        }
+
+        String victimName = matcher.group(1);
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) {
+            return;
+        }
+
+        String selfName = client.player.getName().getString();
+        if (!victimName.equalsIgnoreCase(selfName)) {
+            // Not our own death – ignore.
+            return;
+        }
+
+        // Avoid duplicate handling if we already processed a death very recently
+        if (System.currentTimeMillis() - lastGhostTotemTime < 1000) {
+            return;
+        }
+
+        if (TaggerMod.DEBUG_MODE) {
+            TaggerMod.LOGGER.info("[GhostTotem] Death detected via chat message: '{}'", message);
+        }
+
+        // Trigger the same handler we use for health/spectator detections.
+        onPlayerDeath(client.player, false);
     }
 } 

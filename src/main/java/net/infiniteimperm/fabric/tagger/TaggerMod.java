@@ -33,7 +33,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = true; // Set to false to disable debug logging
+    public static final boolean DEBUG_MODE = false; // Set to true to enable debug logging
 
     /**
      * Utility class to prevent running the stats command too frequently
@@ -164,6 +164,7 @@ public class TaggerMod implements ClientModInitializer {
             
             QueueTracker.onChatMessage(messageStr);
             KitDetector.onChatMessage(messageStr); // Add kit detection
+            GhostTotemDetector.onChatMessage(messageStr); // Detect player death via chat
             
             // Handle private stats detection directly from chat
             if (messageStr.contains("Player's statistics are private")) {
