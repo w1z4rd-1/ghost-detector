@@ -65,5 +65,7 @@ public class TaggerMod implements ClientModInitializer {
                 })
             );
         });
+        
+
     }
 } 

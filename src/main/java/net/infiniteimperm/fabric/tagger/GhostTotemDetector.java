@@ -11,9 +11,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
-import java.awt.datatransfer.Clipboard;
+
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -523,12 +521,14 @@ public class GhostTotemDetector {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return;
         
-        // Copy the command to clipboard
+        // Copy the command to clipboard using Minecraft's clipboard system
         try {
-            StringSelection stringSelection = new StringSelection(command);
-            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-            clipboard.setContents(stringSelection, null);
-            TaggerMod.LOGGER.info("[GhostTotem] Command copied to clipboard: {}", command);
+            if (client.keyboard != null) {
+                client.keyboard.setClipboard(command);
+                TaggerMod.LOGGER.info("[GhostTotem] Command copied to clipboard: {}", command);
+            } else {
+                TaggerMod.LOGGER.error("[GhostTotem] Failed to copy to clipboard: Minecraft keyboard is null");
+            }
         } catch (Exception e) {
             TaggerMod.LOGGER.error("[GhostTotem] Failed to copy to clipboard: {}", e.getMessage());
         }
