@@ -35,6 +35,11 @@ public class GhostTotemDetector {
     // For diagnostic purposes - track if we've detected a ghost totem recently
     private static long lastGhostTotemTime = 0;
     private static long ghostTotemHoldTime = 0;
+    private static long lastTotemPopTime = 0; // Timestamp of last legitimate totem pop
+    private static long lastSelfDeathChatTime = 0; // When "<player> was killed" chat seen
+    
+    // Track which hand last held the totem ("Mainhand", "Offhand", or "Unknown")
+    private static String lastTotemHand = "Unknown";
     
     // Constants
     private static final double SECONDS_PER_TICK = 0.05; // 50ms per tick (20 ticks per second)
@@ -159,6 +164,9 @@ public class GhostTotemDetector {
                 "main hand (slot " + player.getInventory().selectedSlot + ")" : 
                 (inOffHand ? "off hand" : "unknown");
             
+            // Remember which hand so we can reference it later if inventory suddenly clears
+            lastTotemHand = inMainHand ? "Mainhand" : (inOffHand ? "Offhand" : "Unknown");
+            
             // Always log this regardless of DEBUG_MODE
             TaggerMod.LOGGER.info("[GhostTotem] Totem equipped in {}. System time: {}, Game tick: {}", 
                                location, TIME_FORMAT.format(new Date()), totemEquipGameTick);
@@ -178,8 +186,48 @@ public class GhostTotemDetector {
             TaggerMod.LOGGER.info("[GhostTotem] Totem unequipped. Was held for {} ms ({} game ticks).", 
                                heldDurationMillis, ticksHeld);
             
+            // ---------------------------------------------
+            //  Ghost-via-Inventory-Clear detection
+            // ---------------------------------------------
+            int emptySlots = countEmptyInventorySlots(player);
+            boolean inventoryLikelyCleared = emptySlots >= 27; // 75%+ empty
+
+            ItemStack mainNow = player.getInventory().main.get(player.getInventory().selectedSlot);
+            ItemStack offNow  = player.getOffHandStack();
+            boolean handNowEmpty = mainNow.isEmpty() || offNow.isEmpty();
+
+            // Ignore if we actually popped a totem very recently (server sends status 35)
+            long now = System.currentTimeMillis();
+            boolean poppedRecently = (now - lastTotemPopTime) < 2000; // 2-s window
+            boolean recentChatDeath = (now - lastSelfDeathChatTime) < 5000; // 5-second window
+
+            if (TaggerMod.DEBUG_MODE) {
+                TaggerMod.LOGGER.info("[GhostTotem]   inventoryLikelyCleared = {} ({} empty)", inventoryLikelyCleared, emptySlots);
+                TaggerMod.LOGGER.info("[GhostTotem]   handNowEmpty         = {}", handNowEmpty);
+                TaggerMod.LOGGER.info("[GhostTotem]   poppedRecently       = {} ({} ms ago)", poppedRecently, now - lastTotemPopTime);
+                TaggerMod.LOGGER.info("[GhostTotem]   recentChatDeath      = {} ({} ms ago)", recentChatDeath, now - lastSelfDeathChatTime);
+            }
+
+            if (inventoryLikelyCleared && handNowEmpty && !poppedRecently && recentChatDeath) {
+                TaggerMod.LOGGER.info("[GhostTotem] Inventory appears cleared ({} empty slots) right after totem disappeared — treating as ghost.", emptySlots);
+
+                // Use the regular onPlayerDeath pathway to reuse broadcast logic before we zero the timer.
+                onPlayerDeath(player, false);
+            }
+            
             totemEquipTimeNano = 0;
         }
+    }
+
+    // Counts how many main-inventory slots are empty (0-35). Ignores armor/offhand.
+    private static int countEmptyInventorySlots(ClientPlayerEntity player) {
+        int empty = 0;
+        for (ItemStack stack : player.getInventory().main) {
+            if (stack.isEmpty()) {
+                empty++;
+            }
+        }
+        return empty;
     }
 
     // This handles player death with ghost totem detection
@@ -269,6 +317,52 @@ public class GhostTotemDetector {
         } else {
             // Log that a death was detected, but no totem was active
             TaggerMod.LOGGER.info("[GhostTotem] Death detected, but no totem was being held.");
+            // New logic: Some servers keep the player in SURVIVAL, clear inventory and broadcast the
+            // death message before the client has a chance to equip a totem. In these cases the
+            // player remains alive (health > 0, not dead, still in SURVIVAL) and we *still* want to
+            // warn nearby players that a ghost has occurred even though we have no timing data.
+
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client != null && client.player != null) {
+                // Consider it a ghost death if we are still alive *and* not in spectator mode.
+                boolean stillAlive = client.player.getHealth() > 0 && !client.player.isDead();
+                boolean inSpectator = false;
+                if (client.interactionManager != null && client.interactionManager.getCurrentGameMode() != null) {
+                    inSpectator = client.interactionManager.getCurrentGameMode() == GameMode.SPECTATOR;
+                }
+
+                if (stillAlive && !inSpectator) {
+                    // Mark time so we do not double-process this death.
+                    lastGhostTotemTime = System.currentTimeMillis();
+
+                    String publicMessage = "[INSIGNIA] <Ghost Detected>";
+
+                    // Send message to exactly one nearby player if possible, otherwise to global chat
+                    if (client.world != null) {
+                        World world = client.world;
+                        Vec3d playerPos = client.player.getPos();
+                        double renderDistance = 16.0;
+                        Box renderArea = new Box(playerPos.subtract(renderDistance, renderDistance, renderDistance),
+                                                 playerPos.add(renderDistance, renderDistance, renderDistance));
+
+                        List<PlayerEntity> nearbyPlayers = world.getEntitiesByClass(PlayerEntity.class, renderArea,
+                                entity -> entity != client.player);
+
+                        TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Found {} players in render distance", nearbyPlayers.size());
+
+                        if (nearbyPlayers.size() == 1) {
+                            PlayerEntity targetPlayer = nearbyPlayers.get(0);
+                            String targetPlayerName = targetPlayer.getName().getString();
+
+                            TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Sending private message to {}", targetPlayerName);
+                            client.getNetworkHandler().sendChatCommand("w " + targetPlayerName + " " + publicMessage);
+                        } else if (client.getNetworkHandler() != null) {
+                            TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Sending to global chat");
+                            client.getNetworkHandler().sendChatMessage(publicMessage);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -332,5 +426,25 @@ public class GhostTotemDetector {
 
         // Trigger the same handler we use for health/spectator detections.
         onPlayerDeath(client.player, false);
+
+        long now = System.currentTimeMillis();
+        lastSelfDeathChatTime = now;
+
+        if (TaggerMod.DEBUG_MODE) {
+            TaggerMod.LOGGER.info("[GhostTotem] Self death chat detected at {}", TIME_FORMAT.format(new Date(now)));
+        }
+
+        // Only call onPlayerDeath immediately if a totem is currently tracked (timed ghost case).
+        if (totemEquipTimeNano > 0) {
+            onPlayerDeath(client.player, false);
+        }
+    }
+
+    // Called by TotemPopMixin when the server tells the client we used a totem (status 35)
+    public static void onLocalPlayerTotemPop() {
+        lastTotemPopTime = System.currentTimeMillis();
+        if (TaggerMod.DEBUG_MODE) {
+            TaggerMod.LOGGER.info("[GhostTotem] Local player totem pop detected via status packet");
+        }
     }
 } 

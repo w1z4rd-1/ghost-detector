@@ -33,7 +33,7 @@ import java.util.HashMap;
 public class TaggerMod implements ClientModInitializer {
     public static final String MOD_ID = "insignia";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-    public static final boolean DEBUG_MODE = false; // Set to true to enable debug logging
+    public static final boolean DEBUG_MODE = false; // Debug logging enabled
 
     /**
      * Utility class to prevent running the stats command too frequently

@@ -7,7 +7,8 @@
   ],
   "client": [
     "PlayerListHudMixin",
-    "CommandInterceptorMixin"
+    "CommandInterceptorMixin",
+    "TotemPopMixin"
   ],
   "injectors": {
     "defaultRequire": 1
