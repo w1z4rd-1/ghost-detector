@@ -47,7 +47,7 @@ public class TaggerMod implements ClientModInitializer {
             }
         });
         
-        // Register the /gd macro command
+        // Register the /gd commands
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(ClientCommandManager.literal("gd")
                 .then(ClientCommandManager.literal("macro")
@@ -56,10 +56,17 @@ public class TaggerMod implements ClientModInitializer {
                         return 1;
                     })
                 )
+                .then(ClientCommandManager.literal("clipboard")
+                    .executes(context -> {
+                        GhostTotemDetector.toggleClipboardMode();
+                        return 1;
+                    })
+                )
                 .executes(context -> {
                     context.getSource().sendFeedback(Text.literal(
                         "§6Ghost Detector Commands:\n" +
-                        "§e/gd macro §7- Toggle chat macro mode (check your server's rules!)"
+                        "§e/gd macro §7- Toggle chat macro mode (check your server's rules!)\n" +
+                        "§e/gd clipboard §7- Toggle clipboard mode (copy to clipboard)"
                     ));
                     return 1;
                 })

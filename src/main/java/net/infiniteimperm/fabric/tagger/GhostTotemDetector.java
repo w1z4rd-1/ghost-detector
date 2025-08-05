@@ -42,8 +42,9 @@ public class GhostTotemDetector {
     // Track which hand last held the totem ("Mainhand", "Offhand", or "Unknown")
     private static String lastTotemHand = "Unknown";
     
-    // Macro mode and delayed message tracking
+    // Mode tracking and delayed message tracking
     private static boolean macroMode = false;
+    private static boolean clipboardMode = true; // Default to clipboard mode
     private static long lastGhostDetectionTime = 0;
     private static boolean macroReminderScheduled = false;
     
@@ -56,6 +57,7 @@ public class GhostTotemDetector {
     // Toggle macro mode for chat macro functionality
     public static void toggleMacroMode() {
         macroMode = !macroMode;
+        clipboardMode = !macroMode; // When macro mode is on, clipboard mode is off
         if (MinecraftClient.getInstance().player != null) {
             String statusMessage = macroMode ? 
                 "§a[Ghost Detector] Chat macro mode ENABLED" : 
@@ -65,9 +67,27 @@ public class GhostTotemDetector {
         TaggerMod.LOGGER.info("[GhostTotem] Macro mode toggled to: {}", macroMode);
     }
     
+    // Toggle clipboard mode for clipboard functionality
+    public static void toggleClipboardMode() {
+        clipboardMode = !clipboardMode;
+        macroMode = !clipboardMode; // When clipboard mode is on, macro mode is off
+        if (MinecraftClient.getInstance().player != null) {
+            String statusMessage = clipboardMode ? 
+                "§a[Ghost Detector] Clipboard mode ENABLED" : 
+                "§c[Ghost Detector] Clipboard mode DISABLED";
+            MinecraftClient.getInstance().player.sendMessage(Text.literal(statusMessage), false);
+        }
+        TaggerMod.LOGGER.info("[GhostTotem] Clipboard mode toggled to: {}", clipboardMode);
+    }
+    
     // Get current macro mode status
     public static boolean isMacroModeEnabled() {
         return macroMode;
+    }
+    
+    // Get current clipboard mode status
+    public static boolean isClipboardModeEnabled() {
+        return clipboardMode;
     }
     
     // Called every client tick
@@ -79,7 +99,7 @@ public class GhostTotemDetector {
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastGhostDetectionTime >= 3000) { // 3 seconds
                 if (client.player != null) {
-                    client.player.sendMessage(Text.literal("§e[Ghost Detector] Do /gd macro for chat macro mode (check your server's rules!)"), false);
+                    client.player.sendMessage(Text.literal("§e[Ghost Detector] Do /gd macro for chat macro mode or /gd clipboard for clipboard mode (check your server's rules!)"), false);
                 }
                 macroReminderScheduled = false;
             }
@@ -359,19 +379,22 @@ public class GhostTotemDetector {
                     TaggerMod.LOGGER.info("[GhostTotem] Prepared global chat message");
                 }
                 
-                // Send message based on macro mode
-                if (macroMode && client.getNetworkHandler() != null) {
-                    // Macro mode enabled - send command directly
-                    if (nearbyPlayers.size() == 1) {
-                        client.getNetworkHandler().sendChatCommand("w " + nearbyPlayers.get(0).getName().getString() + " " + publicMessage);
-                    } else {
-                        client.getNetworkHandler().sendChatMessage(publicMessage);
-                    }
-                    TaggerMod.LOGGER.info("[GhostTotem] Sent command via macro mode");
-                } else {
-                    // Macro mode disabled - send big message and copy to clipboard
-                    sendGhostDetectionMessage(commandToSend, handType, durationMillis, ticksHeld);
-                }
+                                 // Send message based on mode
+                 if (macroMode && client.getNetworkHandler() != null) {
+                     // Macro mode enabled - send command directly
+                     if (nearbyPlayers.size() == 1) {
+                         client.getNetworkHandler().sendChatCommand("w " + nearbyPlayers.get(0).getName().getString() + " " + publicMessage);
+                     } else {
+                         client.getNetworkHandler().sendChatMessage(publicMessage);
+                     }
+                     TaggerMod.LOGGER.info("[GhostTotem] Sent command via macro mode");
+                 } else if (clipboardMode) {
+                     // Clipboard mode enabled - send big message and copy to clipboard
+                     sendGhostDetectionMessage(commandToSend, handType, durationMillis, ticksHeld);
+                 } else {
+                     // Both modes disabled - just log the detection
+                     TaggerMod.LOGGER.info("[GhostTotem] Ghost detected but both modes are disabled");
+                 }
             }
 
             // Reset the timer immediately to prevent multiple messages for the same death event
@@ -423,19 +446,22 @@ public class GhostTotemDetector {
                             TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Prepared global chat message");
                         }
                         
-                        // Send message based on macro mode
-                        if (macroMode && client.getNetworkHandler() != null) {
-                            // Macro mode enabled - send command directly
-                            if (nearbyPlayers.size() == 1) {
-                                client.getNetworkHandler().sendChatCommand("w " + nearbyPlayers.get(0).getName().getString() + " " + publicMessage);
-                            } else {
-                                client.getNetworkHandler().sendChatMessage(publicMessage);
-                            }
-                            TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Sent command via macro mode");
-                        } else {
-                            // Macro mode disabled - send big message and copy to clipboard
-                            sendGhostDetectionMessage(commandToSend, "Unknown", 0, 0);
-                        }
+                                                 // Send message based on mode
+                         if (macroMode && client.getNetworkHandler() != null) {
+                             // Macro mode enabled - send command directly
+                             if (nearbyPlayers.size() == 1) {
+                                 client.getNetworkHandler().sendChatCommand("w " + nearbyPlayers.get(0).getName().getString() + " " + publicMessage);
+                             } else {
+                                 client.getNetworkHandler().sendChatMessage(publicMessage);
+                             }
+                             TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Sent command via macro mode");
+                         } else if (clipboardMode) {
+                             // Clipboard mode enabled - send big message and copy to clipboard
+                             sendGhostDetectionMessage(commandToSend, "Unknown", 0, 0);
+                         } else {
+                             // Both modes disabled - just log the detection
+                             TaggerMod.LOGGER.info("[GhostTotem] (No-totem) Ghost detected but both modes are disabled");
+                         }
                     }
                 }
             }
