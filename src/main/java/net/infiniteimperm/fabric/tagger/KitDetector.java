@@ -27,11 +27,6 @@ public class KitDetector {
      * Process a chat message to detect kit loading
      */
     public static void onChatMessage(String message) {
-        // Debug: Log all chat messages to see what we're receiving
-        if (TaggerMod.DEBUG_MODE) {
-            TaggerMod.LOGGER.info("[KitDetector] Received chat message: '{}'", message);
-        }
-        
         for (Pattern pattern : KIT_LOAD_PATTERNS) {
             Matcher kitMatcher = pattern.matcher(message);
             if (kitMatcher.find()) {
@@ -43,11 +38,6 @@ public class KitDetector {
                 checkPlayerInRangeAndShowEffect(playerName);
                 return; // Found a match, no need to try other patterns
             }
-        }
-        
-        // Debug: Log when messages don't match any pattern
-        if (TaggerMod.DEBUG_MODE && message.contains("kit")) {
-            TaggerMod.LOGGER.info("[KitDetector] Message contains 'kit' but doesn't match any pattern: '{}'", message);
         }
     }
     
