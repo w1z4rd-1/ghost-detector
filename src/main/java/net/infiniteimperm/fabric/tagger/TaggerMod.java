@@ -1,10 +1,14 @@
 package net.infiniteimperm.fabric.tagger;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -41,6 +45,25 @@ public class TaggerMod implements ClientModInitializer {
                 int screenHeight = MinecraftClient.getInstance().getWindow().getScaledHeight();
                 drawContext.fill(0, 0, screenWidth, screenHeight, 0x40FF0000); // Draw overlay directly
             }
+        });
+        
+        // Register the /gd macro command
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(ClientCommandManager.literal("gd")
+                .then(ClientCommandManager.literal("macro")
+                    .executes(context -> {
+                        GhostTotemDetector.toggleMacroMode();
+                        return 1;
+                    })
+                )
+                .executes(context -> {
+                    context.getSource().sendFeedback(Text.literal(
+                        "§6Ghost Detector Commands:\n" +
+                        "§e/gd macro §7- Toggle chat macro mode (check your server's rules!)"
+                    ));
+                    return 1;
+                })
+            );
         });
     }
 } 
