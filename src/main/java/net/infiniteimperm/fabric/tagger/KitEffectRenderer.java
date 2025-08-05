@@ -11,10 +11,12 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Random;
 
 public class KitEffectRenderer {
     
     private static final ConcurrentHashMap<String, EffectData> activeEffects = new ConcurrentHashMap<>();
+    private static final Random random = new Random();
     
     /**
      * Strike a player with lightning for loading a kit
@@ -23,8 +25,8 @@ public class KitEffectRenderer {
         String playerName = player.getName().getString();
         TaggerMod.LOGGER.info("[KitEffectRenderer] Striking {} with lightning for loading a kit!", playerName);
         
-        // Strike the player with lightning once
-        strikeLightning(player);
+        // Strike the player with multiple lightning bolts
+        strikeMultipleLightning(player);
         
         // Add cylinder particle effect that starts after lightning
         EffectData effect = new EffectData(player, System.currentTimeMillis());
@@ -32,9 +34,9 @@ public class KitEffectRenderer {
     }
     
     /**
-     * Strike a player with dramatic lightning
+     * Strike a player with multiple dramatic lightning bolts
      */
-    private static void strikeLightning(PlayerEntity player) {
+    private static void strikeMultipleLightning(PlayerEntity player) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) {
             return;
@@ -42,21 +44,51 @@ public class KitEffectRenderer {
         
         Vec3d playerPos = player.getPos();
         
-        // Create a lightning bolt entity at the player's position
-        LightningEntity lightning = new LightningEntity(EntityType.LIGHTNING_BOLT, client.world);
-        lightning.refreshPositionAfterTeleport(playerPos.x, playerPos.y, playerPos.z);
+        // Strike with 3-5 lightning bolts in quick succession
+        int lightningCount = 3 + random.nextInt(3); // 3-5 lightning bolts
         
-        // Add the lightning to the world (correct method)
-        client.world.addEntity(lightning);
-        
-        // Play dramatic lightning sounds
-        client.world.playSound(client.player, playerPos.x, playerPos.y, playerPos.z, 
-            SoundEvents.ENTITY_LIGHTNING_BOLT_THUNDER, SoundCategory.WEATHER, 1.0f, 1.0f);
-        client.world.playSound(client.player, playerPos.x, playerPos.y, playerPos.z, 
-            SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT, SoundCategory.WEATHER, 0.8f, 1.2f);
-        
-        TaggerMod.LOGGER.info("[KitEffectRenderer] Lightning strike spawned at {}, {}, {}", 
-            playerPos.x, playerPos.y, playerPos.z);
+        for (int i = 0; i < lightningCount; i++) {
+            // Schedule lightning strikes with slight delays
+            final int strikeIndex = i;
+            client.execute(() -> {
+                // Add a small delay between strikes for dramatic effect
+                try {
+                    Thread.sleep(strikeIndex * 200); // 200ms delay between strikes
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                
+                // Create lightning at slightly different positions around the player
+                double offsetX = (random.nextDouble() - 0.5) * 4.0; // ±2 blocks
+                double offsetZ = (random.nextDouble() - 0.5) * 4.0; // ±2 blocks
+                
+                Vec3d lightningPos = new Vec3d(
+                    playerPos.x + offsetX,
+                    playerPos.y,
+                    playerPos.z + offsetZ
+                );
+                
+                // Create a lightning bolt entity
+                LightningEntity lightning = new LightningEntity(EntityType.LIGHTNING_BOLT, client.world);
+                lightning.refreshPositionAfterTeleport(lightningPos.x, lightningPos.y, lightningPos.z);
+                
+                // Add the lightning to the world
+                client.world.addEntity(lightning);
+                
+                // Play dramatic lightning sounds with variations
+                float volume = 0.8f + random.nextFloat() * 0.4f; // 0.8-1.2 volume
+                float pitch = 0.8f + random.nextFloat() * 0.4f; // 0.8-1.2 pitch
+                
+                client.world.playSound(client.player, lightningPos.x, lightningPos.y, lightningPos.z, 
+                    SoundEvents.ENTITY_LIGHTNING_BOLT_THUNDER, SoundCategory.WEATHER, volume, pitch);
+                client.world.playSound(client.player, lightningPos.x, lightningPos.y, lightningPos.z, 
+                    SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT, SoundCategory.WEATHER, volume * 0.8f, pitch * 1.2f);
+                
+                TaggerMod.LOGGER.info("[KitEffectRenderer] Lightning strike {} spawned at {}, {}, {}", 
+                    strikeIndex + 1, lightningPos.x, lightningPos.y, lightningPos.z);
+            });
+        }
     }
     
     /**

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "tagger",
+  "id": "ghost-detector",
   "version": "${version}",
 
-  "name": "Tagger",
-  "description": "A simple player tagging mod",
+  "name": "Ghost Detector",
+  "description": "Detects ghost totems and kit loading with visual effects",
   "authors": [
     "InfiniteImperm"
   ],
