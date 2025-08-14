@@ -347,9 +347,13 @@ public class GhostTotemDetector {
                     // For spectator transitions, use a specific message without timing
                     publicMessage = String.format("<%s Ghost Detected>", handType);
                 } else {
-                    // For other deaths (potential ghost totems), include timing info
-                    publicMessage = String.format("<%s Ghost Detected> totem held for %dms (%d ticks)", 
+                    // Include timing info only when duration is <= 300ms; otherwise omit timing
+                    if (durationMillis <= 300) {
+                        publicMessage = String.format("<%s Ghost Detected> totem held for %dms (%d ticks)",
                                                      handType, durationMillis, ticksHeld);
+                    } else {
+                        publicMessage = String.format("<%s Ghost Detected>", handType);
+                    }
                 }
                 
                 // Get players in render distance (using a reasonable render distance of ~16 blocks)
